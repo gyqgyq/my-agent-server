@@ -2,15 +2,17 @@ import sys
 import time
 from functools import lru_cache
 
-from fastapi import FastAPI, Response, status
+from fastapi import FastAPI, Request, Response, status
 from fastapi import __version__ as fastapi_version
 
 from core.settings import settings
 from router import routers
+from middleware import my_middleware
 
 app = FastAPI(
     debug=settings.DEBUG,
 )
+my_middleware(app)
 app.include_router(routers, prefix=settings.API_PREFIX)
 
 
