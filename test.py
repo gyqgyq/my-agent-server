@@ -1,22 +1,26 @@
-from typing import Annotated
+from fastapi import APIRouter
 
-from fastapi import APIRouter, Depends
+from auth import CurrentUserIdDep, create_token
+from pydantic import BaseModel
 
-from auth import create_token, get_current_user_id
+router = APIRouter(prefix="/test", tags=["测试"])
 
-router = APIRouter()
+
+class TokenResponse(BaseModel):
+    data: str
+
+
+class UserIdResponse(BaseModel):
+    data: int
+
 
 @router.get("/send_token")
-async def send_token():
-    data = {
-        "user_id": 1,
-    }
-    token = create_token(data["user_id"])
-    return {"data": token}
-
+def send_token() -> TokenResponse:
+    token = create_token(1)
+    return TokenResponse(data=token)
 
 
 @router.get("/get_user_id")
-async def get_token(user_id: Annotated[int, Depends(get_current_user_id)]):
+def get_user_id(user_id: CurrentUserIdDep) -> UserIdResponse:
     """需在请求头携带 `Authorization: Bearer <JWT>`；过期或无效时返回 401，而不是 500。"""
-    return {"data": user_id}
+    return UserIdResponse(data=user_id)

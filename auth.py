@@ -119,3 +119,6 @@ async def get_current_user_id_optional(
         return verify_token(token)
     except AuthTokenError:
         return None
+
+
+CurrentUserIdDep = Annotated[int, Depends(get_current_user_id)]
