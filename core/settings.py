@@ -8,7 +8,7 @@ class Settings(BaseSettings):
     # -------------------
     PROJECT_NAME: str = "我的FastAPI项目"
     PROJECT_VERSION: str = "1.0.0"
-    API_PREFIX: str = "/api/v1"
+    API_PREFIX: str = "/api"
     TIME_ZONE: str = "Asia/Shanghai"
     
     # 状态常量
@@ -25,6 +25,8 @@ class Settings(BaseSettings):
     ASYNC_DATABASE_URL: str
     SECRET_KEY: str
     JWT_SECRET: str
+    JWT_ALGORITHM: str = "HS256"
+    JWT_ACCESS_TOKEN_EXPIRE_MINUTES: int = 1
     DEBUG: bool
     class Config:
         env_file = (".env", ".env.prod")  # 自动读 .env 文件

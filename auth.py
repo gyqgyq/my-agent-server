@@ -5,16 +5,23 @@ from typing import Annotated, Any
 
 import jwt
 from fastapi import Depends, HTTPException, status
-from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
+from fastapi.security import OAuth2PasswordBearer
 from jwt.exceptions import ExpiredSignatureError, InvalidTokenError
 
 from core.settings import settings
 
-ALGORITHM = "HS256"
-ACCESS_TOKEN_EXPIRE_MINUTES = 60
 
-security = HTTPBearer(auto_error=False)
+def oauth2_token_url() -> str:
+    """与挂载了 settings.API_PREFIX 的路由一致，供 OpenAPI / Swagger 填写 token 端点路径。"""
+    base = settings.API_PREFIX.rstrip("/")
+    return f"{base}/test/send_token"
 
+
+oauth2_scheme = OAuth2PasswordBearer(tokenUrl=oauth2_token_url())
+oauth2_scheme_optional = OAuth2PasswordBearer(
+    tokenUrl=oauth2_token_url(),
+    auto_error=False,
+)
 
 class AuthTokenError(Exception):
     """JWT 校验失败（过期或无效）。"""
@@ -38,11 +45,11 @@ def create_token(
     expires_delta: timedelta | None = None,
     extra_claims: dict[str, Any] | None = None,
 ) -> str:
-    """签发访问令牌。默认有效期为 ACCESS_TOKEN_EXPIRE_MINUTES。"""
+    """签发访问令牌。默认有效期由 settings.JWT_ACCESS_TOKEN_EXPIRE_MINUTES 决定。"""
     expire = _now_utc() + (
         expires_delta
         if expires_delta is not None
-        else timedelta(minutes=ACCESS_TOKEN_EXPIRE_MINUTES)
+        else timedelta(minutes=settings.JWT_ACCESS_TOKEN_EXPIRE_MINUTES)
     )
     payload: dict[str, Any] = {
         "user_id": user_id,
@@ -51,7 +58,7 @@ def create_token(
     }
     if extra_claims:
         payload.update(extra_claims)
-    return jwt.encode(payload, settings.JWT_SECRET, algorithm=ALGORITHM)
+    return jwt.encode(payload, settings.JWT_SECRET, algorithm=settings.JWT_ALGORITHM)
 
 
 def decode_access_token(token: str) -> dict[str, Any]:
@@ -59,7 +66,7 @@ def decode_access_token(token: str) -> dict[str, Any]:
     return jwt.decode(
         token,
         settings.JWT_SECRET,
-        algorithms=[ALGORITHM],
+        algorithms=[settings.JWT_ALGORITHM],
     )
 
 
@@ -91,17 +98,11 @@ def _unauthorized(detail: str) -> HTTPException:
 
 
 async def get_current_user_id(
-    credentials: Annotated[
-        HTTPAuthorizationCredentials | None,
-        Depends(security),
-    ],
+    token: Annotated[str, Depends(oauth2_scheme)],
 ) -> int:
     """从 Authorization: Bearer 中解析并校验 JWT，返回 user_id。"""
-    if credentials is None or credentials.scheme.lower() != "bearer":
-        raise _unauthorized("未提供有效的 Bearer 令牌")
-
     try:
-        return verify_token(credentials.credentials)
+        return verify_token(token)
     except AuthTokenExpired:
         raise _unauthorized("令牌已过期") from None
     except AuthTokenInvalid:
@@ -109,15 +110,12 @@ async def get_current_user_id(
 
 
 async def get_current_user_id_optional(
-    credentials: Annotated[
-        HTTPAuthorizationCredentials | None,
-        Depends(security),
-    ],
+    token: Annotated[str | None, Depends(oauth2_scheme_optional)],
 ) -> int | None:
     """同上，但未携带令牌时返回 None，不抛 401。"""
-    if credentials is None or credentials.scheme.lower() != "bearer":
+    if token is None:
         return None
     try:
-        return verify_token(credentials.credentials)
+        return verify_token(token)
     except AuthTokenError:
         return None
