@@ -1,16 +1,26 @@
 import sys
 import time
+from contextlib import asynccontextmanager
 from functools import lru_cache
 
 from fastapi import FastAPI, Request, Response, status
 from fastapi import __version__ as fastapi_version
 
+from core.logging_config import setup_logging
 from core.settings import settings
-from router import routers
 from middleware import my_middleware
+from router import routers
+
+
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    setup_logging(settings)
+    yield
+
 
 app = FastAPI(
     debug=settings.DEBUG,
+    lifespan=lifespan,
 )
 my_middleware(app)
 app.include_router(routers, prefix=settings.API_PREFIX)

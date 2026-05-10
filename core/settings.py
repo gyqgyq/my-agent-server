@@ -28,8 +28,13 @@ class Settings(BaseSettings):
     JWT_ALGORITHM: str = "HS256"
     JWT_ACCESS_TOKEN_EXPIRE_MINUTES: int = 1
     DEBUG: bool
+
+    # 日志（LOG_FORMAT=json 适合生产采集；本地默认 text）
+    LOG_LEVEL: str = "INFO"
+    LOG_FORMAT: Literal["json", "text"] = "text"
     class Config:
-        env_file = (".env", ".env.prod")  # 自动读 .env 文件
+        env_file = (".env")  # 自动读 .env 文件
+        # env_file = (".env", ".env.prod")  # 自动读 .env 文件
 
         
 @lru_cache()
