@@ -8,12 +8,12 @@ from fastapi import __version__ as fastapi_version
 from fastapi.responses import FileResponse
 
 from core.settings import settings
-from router import routers
+# from router import routers
 
 app = FastAPI(
     debug=settings.DEBUG,
 )
-app.include_router(routers)
+# app.include_router(routers)
 
 
 # @app.get("favicon.ico", include_in_schema=False)
