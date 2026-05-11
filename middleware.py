@@ -31,16 +31,16 @@ class RateLimitMiddleware(BaseHTTPMiddleware):
         self,
         app: ASGIApp,
         *,
-        min_interval_seconds: float = 5.0,
+        min_interval_seconds: float = 1.0,
         max_tracked_clients: int = 50000,
         stale_after_seconds: float | None = None,
-        exempt_paths: frozenset[str] | None = None,
+        included_paths: frozenset[str] | None = None,
     ) -> None:
         super().__init__(app)
         self._min_interval = min_interval_seconds
         self._max_tracked = max_tracked_clients
         self._stale_after = stale_after_seconds or max(min_interval_seconds * 10.0, 60.0)
-        self._exempt_paths = exempt_paths or frozenset()
+        self._included_paths = included_paths or frozenset()
         self._last_seen: dict[str, float] = {}
         self._lock = asyncio.Lock()
         self._ops_since_cleanup = 0
@@ -54,7 +54,7 @@ class RateLimitMiddleware(BaseHTTPMiddleware):
             self._last_seen.pop(next(iter(self._last_seen)))
 
     async def dispatch(self, request: Request, call_next):
-        if request.method == "OPTIONS" or request.url.path in self._exempt_paths:
+        if request.method == "OPTIONS" or request.url.path not in self._included_paths:
             return await call_next(request)
 
         client_key = _rate_limit_client_key(request)
@@ -117,7 +117,7 @@ def my_middleware(app: FastAPI) -> None:
         RateLimitMiddleware,
         min_interval_seconds=1.0,
         max_tracked_clients=50000,
-        exempt_paths=frozenset({"/docs", "/openapi.json"}),
+        included_paths=frozenset({"/", "/api/test/send_token"}),
     )
 
 
