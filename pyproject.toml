@@ -9,6 +9,7 @@ dependencies = [
     "fastapi[standard]>=0.136.1",
     "pyjwt>=2.12.1",
     "python-dotenv>=1.2.2",
+    "redis>=7.4.0",
     "sqlalchemy[asyncio]>=2.0.49",
 ]
 

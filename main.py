@@ -12,6 +12,7 @@ from core.logging_config import setup_logging
 from core.settings import settings
 from middleware import my_middleware
 from router import routers
+from database.redis import redis_connect
 
 
 class HelloResponse(BaseModel):
@@ -29,7 +30,11 @@ class ServerStatusResponse(BaseModel):
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     setup_logging(settings)
+    app.state.redis = await redis_connect()
     yield
+    r = app.state.redis
+    if r is not None:
+        await r.aclose()
 
 
 app = FastAPI(

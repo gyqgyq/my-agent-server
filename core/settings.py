@@ -29,9 +29,23 @@ class Settings(BaseSettings):
     JWT_ACCESS_TOKEN_EXPIRE_MINUTES: int = 1
     DEBUG: bool
 
+    # -------------------
+    # 3. 数据库配置（从 .env 读取）
+    # -------------------
+    REDIS_HOST: str
+    REDIS_PORT: int
+    REDIS_DB: int
+    REDIS_PASSWORD: str
+    # 连接阶段超时（秒），便于尽快失败而不是长时间挂起
+    REDIS_SOCKET_CONNECT_TIMEOUT: float = 5.0
+    # True：Ping 失败时不阻断启动，app.state.redis 为 None（仅适合本地/非 Redis 关键路径）
+    REDIS_OPTIONAL: bool = False
+
     # 日志（LOG_FORMAT=json 适合生产采集；本地默认 text）
     LOG_LEVEL: str = "INFO"
     LOG_FORMAT: Literal["json", "text"] = "text"
+
+
     class Config:
         env_file = (".env")  # 自动读 .env 文件
         # env_file = (".env", ".env.prod")  # 自动读 .env 文件
