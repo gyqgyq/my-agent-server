@@ -12,6 +12,7 @@ from core.logging_config import setup_logging
 from core.settings import settings
 from middleware import my_middleware
 from router import routers
+from database.postgres import engine, postgres_connect
 from database.redis import redis_connect
 
 
@@ -30,8 +31,10 @@ class ServerStatusResponse(BaseModel):
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     setup_logging(settings)
+    await postgres_connect()
     app.state.redis = await redis_connect()
     yield
+    await engine.dispose()
     r = app.state.redis
     if r is not None:
         await r.aclose()
