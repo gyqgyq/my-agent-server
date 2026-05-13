@@ -4,12 +4,12 @@ import hashlib
 
 import redis.asyncio as redis
 
-REFRESH_KEY_PREFIX = "auth:refresh:"
+from database.redis_keys import refresh_token_storage_key
 
 
 def refresh_redis_key(refresh_token: str) -> str:
     digest = hashlib.sha256(refresh_token.encode("utf-8")).hexdigest()
-    return f"{REFRESH_KEY_PREFIX}{digest}"
+    return refresh_token_storage_key(digest)
 
 
 async def save_refresh(

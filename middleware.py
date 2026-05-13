@@ -5,6 +5,8 @@ from typing import Any
 
 from fastapi import FastAPI, Request
 from redis.exceptions import RedisError
+
+from database.redis_keys import rate_limit_last_seen_key
 from starlette.middleware.base import BaseHTTPMiddleware
 from starlette.responses import JSONResponse
 from starlette.types import ASGIApp
@@ -76,15 +78,12 @@ class RateLimitMiddleware(BaseHTTPMiddleware):
         while len(self._last_seen) > self._max_tracked:
             self._last_seen.pop(next(iter(self._last_seen)))
 
-    def _redis_key(self, client_key: str) -> str:
-        return f"rl:last_seen:{client_key}"
-
     async def _redis_allow(self, r: Any, client_key: str, now: float) -> tuple[bool, int]:
         if self._redis_script is None:
             self._redis_script = r.register_script(_RL_LAST_SEEN_LUA)
         ex = max(int(self._stale_after), 1)
         raw = await self._redis_script(
-            keys=[self._redis_key(client_key)],
+            keys=[rate_limit_last_seen_key(client_key)],
             args=[str(now), str(self._min_interval), str(ex)],
         )
         allowed, retry_after = int(raw[0]), int(raw[1])
