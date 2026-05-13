@@ -15,6 +15,10 @@ redis_pool = redis.ConnectionPool(
     encoding="utf-8",
     decode_responses=True,
     socket_connect_timeout=settings.REDIS_SOCKET_CONNECT_TIMEOUT,
+    health_check_interval=settings.REDIS_HEALTH_CHECK_INTERVAL,
+    socket_keepalive=settings.REDIS_SOCKET_KEEPALIVE,
+    # 半开连接上首次读写失败时自动断开并重试一次（与 health_check 配合）
+    retry_on_error=[ConnectionError],
 )
 
 

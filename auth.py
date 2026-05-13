@@ -5,23 +5,13 @@ from typing import Annotated, Any
 
 import jwt
 from fastapi import Depends, HTTPException, status
-from fastapi.security import OAuth2PasswordBearer
+from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from jwt.exceptions import ExpiredSignatureError, InvalidTokenError
 
 from core.settings import settings
 
-
-def oauth2_token_url() -> str:
-    """与挂载了 settings.API_PREFIX 的路由一致，供 OpenAPI / Swagger 填写 token 端点路径。"""
-    base = settings.API_PREFIX.rstrip("/")
-    return f"{base}/test/send_token"
-
-
-oauth2_scheme = OAuth2PasswordBearer(tokenUrl=oauth2_token_url())
-oauth2_scheme_optional = OAuth2PasswordBearer(
-    tokenUrl=oauth2_token_url(),
-    auto_error=False,
-)
+http_bearer = HTTPBearer()
+http_bearer_optional = HTTPBearer(auto_error=False)
 
 class AuthTokenError(Exception):
     """JWT 校验失败（过期或无效）。"""
@@ -98,9 +88,10 @@ def _unauthorized(detail: str) -> HTTPException:
 
 
 async def get_current_user_id(
-    token: Annotated[str, Depends(oauth2_scheme)],
+    creds: Annotated[HTTPAuthorizationCredentials, Depends(http_bearer)],
 ) -> int:
     """从 Authorization: Bearer 中解析并校验 JWT，返回 user_id。"""
+    token = creds.credentials
     try:
         return verify_token(token)
     except AuthTokenExpired:
@@ -110,13 +101,13 @@ async def get_current_user_id(
 
 
 async def get_current_user_id_optional(
-    token: Annotated[str | None, Depends(oauth2_scheme_optional)],
+    creds: Annotated[HTTPAuthorizationCredentials | None, Depends(http_bearer_optional)],
 ) -> int | None:
     """同上，但未携带令牌时返回 None，不抛 401。"""
-    if token is None:
+    if creds is None:
         return None
     try:
-        return verify_token(token)
+        return verify_token(creds.credentials)
     except AuthTokenError:
         return None
 

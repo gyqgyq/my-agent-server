@@ -26,7 +26,8 @@ class Settings(BaseSettings):
     SECRET_KEY: str
     JWT_SECRET: str
     JWT_ALGORITHM: str = "HS256"
-    JWT_ACCESS_TOKEN_EXPIRE_MINUTES: int = 1
+    JWT_ACCESS_TOKEN_EXPIRE_MINUTES: int = 15
+    JWT_REFRESH_TOKEN_EXPIRE_DAYS: int = 7
     DEBUG: bool
 
     # -------------------
@@ -38,6 +39,10 @@ class Settings(BaseSettings):
     REDIS_PASSWORD: str
     # 连接阶段超时（秒），便于尽快失败而不是长时间挂起
     REDIS_SOCKET_CONNECT_TIMEOUT: float = 5.0
+    # 空闲连接超过该秒数后，下次使用前先 PING，避免远端/NAT 已掐断的半开连接导致 10054
+    REDIS_HEALTH_CHECK_INTERVAL: float = 30.0
+    # TCP keepalive，减轻长空闲被中间设备回收的概率
+    REDIS_SOCKET_KEEPALIVE: bool = True
     # True：Ping 失败时不阻断启动，app.state.redis 为 None（仅适合本地/非 Redis 关键路径）
     REDIS_OPTIONAL: bool = False
 
