@@ -1,8 +1,9 @@
-from pydantic_settings import BaseSettings
+from pydantic_settings import BaseSettings, SettingsConfigDict
 from typing import Literal
 from functools import lru_cache
 
 class Settings(BaseSettings):
+    model_config = SettingsConfigDict(env_file=".env", extra="ignore")
     # -------------------
     # 1. 项目常量（固定不变）
     # -------------------
@@ -23,12 +24,17 @@ class Settings(BaseSettings):
     # 2. 环境变量（密码、密钥、数据库，从 .env 读取）
     # -------------------
     ASYNC_DATABASE_URL: str
-    SECRET_KEY: str
     JWT_SECRET: str
     JWT_ALGORITHM: str = "HS256"
     JWT_ACCESS_TOKEN_EXPIRE_MINUTES: int = 15
     JWT_REFRESH_TOKEN_EXPIRE_DAYS: int = 7
     DEBUG: bool
+    # 运维探活 `/server-status`：未设置或空字符串时该路由始终 404
+    SERVER_STATUS_TOKEN: str | None = None
+    # 逗号分隔的浏览器 Origin；空则不加 CORS 中间件（前后端同源或网关处理跨域）
+    CORS_ORIGINS: str = ""
+    # True：限流等逻辑优先使用 X-Forwarded-For 首段（仅当受信反向代理会剥离/覆盖该头时开启）
+    TRUST_PROXY_HEADERS: bool = False
 
     # -------------------
     # 3. 数据库配置（从 .env 读取）
@@ -50,12 +56,13 @@ class Settings(BaseSettings):
     LOG_LEVEL: str = "INFO"
     LOG_FORMAT: Literal["json", "text"] = "text"
 
+    def parsed_cors_origins(self) -> list[str]:
+        raw = self.CORS_ORIGINS.strip()
+        if not raw:
+            return []
+        return [o.strip() for o in raw.split(",") if o.strip()]
 
-    class Config:
-        env_file = (".env")  # 自动读 .env 文件
-        # env_file = (".env", ".env.prod")  # 自动读 .env 文件
 
-        
 @lru_cache()
 def get_settings():
     return Settings()

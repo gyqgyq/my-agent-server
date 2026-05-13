@@ -6,6 +6,7 @@ from typing import Any
 from fastapi import FastAPI, Request
 from redis.exceptions import RedisError
 
+from core.settings import settings
 from database.redis_keys import rate_limit_last_seen_key
 from starlette.middleware.base import BaseHTTPMiddleware
 from starlette.responses import JSONResponse
@@ -16,12 +17,13 @@ rate_limit_logger = logging.getLogger("app.rate_limit")
 
 
 def _rate_limit_client_key(request: Request) -> str:
-    """在反向代理后优先使用 X-Forwarded-For 的第一个地址（需上游网关剥离不可信链）。"""
-    forwarded = request.headers.get("x-forwarded-for")
-    if forwarded:
-        part = forwarded.split(",")[0].strip()
-        if part:
-            return part
+    """限流用的客户端标识。仅当 settings.TRUST_PROXY_HEADERS 为 True 时才读 X-Forwarded-For（需受信网关改写）。"""
+    if settings.TRUST_PROXY_HEADERS:
+        forwarded = request.headers.get("x-forwarded-for")
+        if forwarded:
+            part = forwarded.split(",")[0].strip()
+            if part:
+                return part
     if request.client is not None:
         return request.client.host
     return "unknown"
@@ -174,11 +176,16 @@ def my_middleware(app: FastAPI) -> None:
             access_logger.info(msg, extra=extra)
         return response
 
+    rl_paths: set[str] = {"/"}
+    if settings.DEBUG:
+        prefix = settings.API_PREFIX.rstrip("/") or ""
+        rl_paths.add(f"{prefix}/test/send_token")
+
     app.add_middleware(
         RateLimitMiddleware,
         min_interval_seconds=1.0,
         max_tracked_clients=50000,
-        included_paths=frozenset({"/", "/api/test/send_token"}),
+        included_paths=frozenset(rl_paths),
     )
 
 

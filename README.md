@@ -16,8 +16,16 @@ uv run uvicorn main:app --reload
 |------|------|
 | `LOG_LEVEL` | 如 `INFO`、`WARNING`、`DEBUG`；生产建议 `INFO` 或更严。 |
 | `LOG_FORMAT` | `text`（本地可读）或 `json`（单行 JSON，便于 Loki / ELK 等采集）。生产建议在 `.env.prod` 中设为 `json`。 |
+| `DEBUG` | `false` 时关闭 `/docs`、`/redoc`、`/openapi.json`，且不挂载调试用 `/api/test/*` 路由。生产务必为 `false`。 |
+| `SERVER_STATUS_TOKEN` | 设置后，`GET /server-status?token=…` 校验通过才返回探活 JSON；未设置或空则始终 404。 |
+| `CORS_ORIGINS` | 逗号分隔的浏览器 `Origin`；留空则不注册 CORS 中间件（由网关或同源处理）。 |
+| `TRUST_PROXY_HEADERS` | 限流用的客户端 IP：仅在为 `true` 时才读取 `X-Forwarded-For` 首段。直连公网时保持 `false`，避免客户端伪造 IP；置于受信反向代理之后且网关会剥离/覆盖不可信链时再设为 `true`。 |
 
 示例见仓库根目录 `.env.sample`。
+
+### 反向代理与限流
+
+默认（`TRUST_PROXY_HEADERS=false`）限流按 `request.client`（与 Uvicorn 之间一跳的 TCP 对端）区分客户端。若应用前有 Nginx、Ingress 等，应在网关把真实客户端 IP 写入受信头，并仅在确认该头不会被外网伪造后将本应用 `TRUST_PROXY_HEADERS` 设为 `true`。
 
 ### 与 Uvicorn 的 access 日志
 
@@ -41,3 +49,12 @@ logger.info("处理完成", extra={"order_id": "123"})
 ```
 
 不要在日志中输出 `Authorization`、Cookie、URL query 中的 token、密码或 JWT 载荷。
+
+## 测试
+
+依赖根目录 `.env`（或等价环境变量）以满足 `core.settings.Settings` 的必填项。安装开发依赖后运行：
+
+```bash
+uv sync --group dev
+uv run pytest
+```
