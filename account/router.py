@@ -3,6 +3,7 @@ import logging
 import bcrypt
 from fastapi import APIRouter, HTTPException, status
 from pydantic import BaseModel, Field, field_validator
+from sqlalchemy import select
 from sqlalchemy.exc import IntegrityError
 
 from account.models import User
@@ -33,6 +34,19 @@ class RegisterOut(BaseModel):
 
 @router.post("/register", status_code=status.HTTP_201_CREATED)
 async def register(body: RegisterIn, session: SessionDep) -> RegisterOut:
+    dup = await session.scalar(
+        select(User.id).where(User.username == body.username).limit(1)
+    )
+    if dup is not None:
+        logger.info(
+            "user_register_username_taken",
+            extra={"username": body.username, "error": "用户名已存在"},
+        )
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="用户名已存在",
+        )
+
     pw_bytes = body.password.encode("utf-8")
     hashed = bcrypt.hashpw(pw_bytes, bcrypt.gensalt(rounds=12))
     user = User(
