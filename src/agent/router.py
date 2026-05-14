@@ -1,27 +1,162 @@
-from fastapi import APIRouter
+import asyncio
+import json
+import logging
+from collections.abc import AsyncIterator
+from functools import lru_cache
+from typing import Annotated, Any
 
+from fastapi import APIRouter, HTTPException, Query, Request, status
+from fastapi.responses import StreamingResponse
 from langchain.agents import create_agent
+from langchain.chat_models import init_chat_model
+from langchain.messages import HumanMessage
+from langchain_core.messages import BaseMessage
+from pydantic import BaseModel, Field, field_validator
 
+from auth import CurrentUserIdDep
+from core.settings import settings
+from src.agent.prompt import system_prompt
+from src.agent.tools import get_weather
 
-
-
+logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/agent", tags=["agent"])
 
-# def get_weather(city: str) -> str:
-#     """Get weather for a given city."""
-#     return f"It's always sunny in {city}!"
+_SSE_HEADERS = {
+    "Cache-Control": "no-cache",
+    "Connection": "keep-alive",
+    "X-Accel-Buffering": "no",
+}
 
-# agent = create_agent(
-#     model="google_genai:gemini-2.5-flash-lite",
-#     tools=[get_weather],
-#     system_prompt="You are a helpful assistant",
-# )
 
-# @router.get("/get_msg")
-# def get_msg(msg: str):
-#     return agent.invoke({
-#         "messages": [
-#             {"role": "user", "content": msg}
-#         ]
-#     })
+@lru_cache(maxsize=1)
+def _get_agent():
+    """首次请求时再建 agent；改环境变量后需重启进程使 lru_cache 失效。"""
+    model = init_chat_model(
+        settings.AGENT_CHAT_MODEL,
+        google_api_key=settings.GOOGLE_API_KEY,
+    )
+    return create_agent(
+        model=model,
+        tools=[get_weather],
+        system_prompt=system_prompt,
+    )
+
+
+def _to_json_safe(obj: Any) -> Any:
+    """将 LangGraph chunk（含 BaseMessage）转为可 json.dumps 的结构。"""
+    if isinstance(obj, BaseMessage):
+        return obj.model_dump()
+    if isinstance(obj, dict):
+        return {k: _to_json_safe(v) for k, v in obj.items()}
+    if isinstance(obj, (list, tuple)):
+        return [_to_json_safe(v) for v in obj]
+    return obj
+
+
+def _sse_error_event(exc: BaseException) -> str:
+    """对客户端暴露的错误文案：生产不泄露异常串。"""
+    if isinstance(exc, TimeoutError):
+        detail = "生成超时，请缩短输入或稍后重试"
+    else:
+        detail = (
+            f"{type(exc).__name__}: {exc}"
+            if settings.DEBUG
+            else "生成失败，请稍后重试"
+        )
+    line = json.dumps({"event": "error", "detail": detail}, ensure_ascii=False)
+    return f"data: {line}\n\n"
+
+
+class AgentStreamBody(BaseModel):
+    """POST 流式对话正文（推荐生产使用，避免 GET URL 长度与 query 进日志问题）。"""
+
+    message: str = Field(..., min_length=1)
+
+    @field_validator("message")
+    @classmethod
+    def message_ok(cls, v: str) -> str:
+        s = v.strip()
+        if not s:
+            raise ValueError("不能为空或仅空白")
+        if len(s) > settings.AGENT_BODY_MAX_CHARS:
+            raise ValueError(f"消息长度不能超过 {settings.AGENT_BODY_MAX_CHARS} 字符")
+        return s
+
+
+async def _agent_sse(
+    request: Request,
+    text: str,
+    *,
+    user_id: int,
+) -> AsyncIterator[str]:
+    agent = _get_agent()
+    log_extra = {"user_id": user_id, "path": str(request.url.path)}
+    logger.info("agent_sse_start", extra=log_extra)
+    try:
+        async with asyncio.timeout(settings.AGENT_SSE_TIMEOUT_SECONDS):
+            async for chunk in agent.astream(
+                {"messages": [HumanMessage(content=text)]},
+                stream_mode="updates",
+                version="v2",
+            ):
+                if await request.is_disconnected():
+                    logger.info("agent_sse_client_disconnected", extra=log_extra)
+                    break
+                line = json.dumps(_to_json_safe(chunk), ensure_ascii=False)
+                yield f"data: {line}\n\n"
+    except TimeoutError:
+        logger.warning("agent_sse_timeout", extra=log_extra)
+        yield _sse_error_event(TimeoutError())
+    except Exception as exc:
+        logger.exception("agent_sse_failed", extra=log_extra)
+        yield _sse_error_event(exc)
+    finally:
+        yield "data: [DONE]\n\n"
+        logger.info("agent_sse_end", extra=log_extra)
+
+
+def _normalize_get_message(msg: str) -> str:
+    s = msg.strip()
+    if not s:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="消息不能为空或仅空白",
+        )
+    return s
+
+
+@router.get("/get_msg")
+async def get_msg(
+    request: Request,
+    msg: Annotated[
+        str,
+        Query(
+            min_length=1,
+            max_length=settings.AGENT_GET_MSG_MAX_CHARS,
+            description="用户输入（短句；长文本请用 POST /agent/chat/stream）",
+        ),
+    ],
+    user_id: CurrentUserIdDep,
+) -> StreamingResponse:
+    """SSE（GET）。浏览器原生 EventSource 无法带 Bearer，生产环境请用 POST + fetch 流式并携带 Authorization。"""
+    text = _normalize_get_message(msg)
+    return StreamingResponse(
+        _agent_sse(request, text, user_id=user_id),
+        media_type="text/event-stream",
+        headers=_SSE_HEADERS,
+    )
+
+
+@router.post("/chat/stream")
+async def chat_stream(
+    request: Request,
+    body: AgentStreamBody,
+    user_id: CurrentUserIdDep,
+) -> StreamingResponse:
+    """SSE（POST，推荐生产）：`Authorization: Bearer <JWT>` + JSON `{\"message\": \"...\"}`。"""
+    return StreamingResponse(
+        _agent_sse(request, body.message, user_id=user_id),
+        media_type="text/event-stream",
+        headers=_SSE_HEADERS,
+    )

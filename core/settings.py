@@ -56,6 +56,17 @@ class Settings(BaseSettings):
     LOG_LEVEL: str = "INFO"
     LOG_FORMAT: Literal["json", "text"] = "text"
 
+    # llm配置
+    GOOGLE_API_KEY: str
+    # Agent：`init_chat_model` 的模型标识；改后需重启进程
+    AGENT_CHAT_MODEL: str = "google_genai:gemini-2.5-flash"
+    # 单次 SSE 流式整段 astream 的最长等待（秒），防挂死连接
+    AGENT_SSE_TIMEOUT_SECONDS: float = 120.0
+    # GET 查询参数上限（URL/代理长度）；长文本请用 POST /chat/stream
+    AGENT_GET_MSG_MAX_CHARS: int = 2000
+    # POST body message 最大字符数
+    AGENT_BODY_MAX_CHARS: int = 32000
+
     def parsed_cors_origins(self) -> list[str]:
         raw = self.CORS_ORIGINS.strip()
         if not raw:
