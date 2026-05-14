@@ -6,7 +6,7 @@ from src.core.settings import settings
 
 routers = APIRouter(prefix=settings.API_PREFIX)
 if settings.DEBUG:
-    from test import router as test_router
+    from src.api.v1.endpoints.test import router as test_router
 
     routers.include_router(test_router)
 

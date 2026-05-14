@@ -11,8 +11,6 @@ wheels/
 
 .env
 .env.prod
-
-# Cursor IDE
 .cursor
-
+.agents
 pdr.md
