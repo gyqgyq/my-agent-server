@@ -2,8 +2,16 @@
 
 ## 本地开发
 
+推荐使用 FastAPI CLI（读取 `pyproject.toml` 中的 `[tool.fastapi] entrypoint`）：
+
 ```bash
-uv run uvicorn src:main:app --reload
+uv run fastapi dev
+```
+
+或直接指定 Uvicorn 模块路径（仓库根为当前工作目录，`PYTHONPATH` 包含项目根时可省略额外配置）：
+
+```bash
+uv run uvicorn src.main:app --reload
 ```
 
 ## 日志与生产环境建议
@@ -20,6 +28,7 @@ uv run uvicorn src:main:app --reload
 | `SERVER_STATUS_TOKEN` | 设置后，`GET /server-status?token=…` 校验通过才返回探活 JSON；未设置或空则始终 404。 |
 | `CORS_ORIGINS` | 逗号分隔的浏览器 `Origin`；留空则不注册 CORS 中间件（由网关或同源处理）。 |
 | `TRUST_PROXY_HEADERS` | 限流用的客户端 IP：仅在为 `true` 时才读取 `X-Forwarded-For` 首段。直连公网时保持 `false`，避免客户端伪造 IP；置于受信反向代理之后且网关会剥离/覆盖不可信链时再设为 `true`。 |
+| `GOOGLE_API_KEY` | LangChain Agent 使用的 Google GenAI API 密钥（必填，见 `core.settings`）。 |
 
 示例见仓库根目录 `.env.sample`。
 
@@ -34,7 +43,7 @@ uv run uvicorn src:main:app --reload
 - **推荐**：关闭 Uvicorn 自带 access，只保留应用内日志。
 
   ```bash
-  uv run uvicorn main:app --host 0.0.0.0 --port 8000 --no-access-log
+  uv run uvicorn src.main:app --host 0.0.0.0 --port 8000 --no-access-log
   ```
 
 - **或**：使用 Uvicorn 的 `--log-config` 提供自定义 logging 配置，自行统一格式与级别（需与当前 `dictConfig` 协调，避免重复 handler）。
@@ -52,7 +61,7 @@ logger.info("处理完成", extra={"order_id": "123"})
 
 ## 测试
 
-依赖根目录 `.env`（或等价环境变量）以满足 `core.settings.Settings` 的必填项。安装开发依赖后运行：
+单元测试对 `Settings` 等使用显式构造参数或 monkeypatch，**不应依赖**本机根目录 `.env` 才能通过。安装开发依赖后运行：
 
 ```bash
 uv sync --group dev

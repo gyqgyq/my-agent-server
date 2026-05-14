@@ -10,6 +10,7 @@ def test_parsed_cors_origins() -> None:
         REDIS_PORT=6379,
         REDIS_DB=0,
         REDIS_PASSWORD="",
+        GOOGLE_API_KEY="test",
         CORS_ORIGINS=" http://a.com ,https://b.com ",
     )
     assert s.parsed_cors_origins() == ["http://a.com", "https://b.com"]
@@ -24,6 +25,7 @@ def test_parsed_cors_origins_empty() -> None:
         REDIS_PORT=6379,
         REDIS_DB=0,
         REDIS_PASSWORD="",
+        GOOGLE_API_KEY="test",
         CORS_ORIGINS="   ",
     )
     assert s.parsed_cors_origins() == []
