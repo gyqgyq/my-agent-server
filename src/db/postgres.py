@@ -7,7 +7,7 @@ from sqlalchemy import text
 from sqlalchemy.engine.url import make_url
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 
-from core.settings import settings
+from src.core.settings import settings
 
 logger = logging.getLogger(__name__)
 

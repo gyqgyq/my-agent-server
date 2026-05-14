@@ -8,7 +8,7 @@ from fastapi import Depends, HTTPException, status
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from jwt.exceptions import ExpiredSignatureError, InvalidTokenError
 
-from core.settings import settings
+from src.core.settings import settings
 
 http_bearer = HTTPBearer()
 http_bearer_optional = HTTPBearer(auto_error=False)

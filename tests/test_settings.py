@@ -1,4 +1,4 @@
-from core.settings import Settings
+from src.core.settings import Settings
 
 
 def test_parsed_cors_origins() -> None:

@@ -6,8 +6,8 @@ from typing import Any
 from fastapi import FastAPI, Request
 from redis.exceptions import RedisError
 
-from core.settings import settings
-from database.redis_keys import rate_limit_last_seen_key
+from src.core.settings import settings
+from src.db.redis_keys import rate_limit_last_seen_key
 from starlette.middleware.base import BaseHTTPMiddleware
 from starlette.responses import JSONResponse
 from starlette.types import ASGIApp

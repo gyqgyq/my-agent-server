@@ -1,6 +1,6 @@
 from fastapi import APIRouter
 
-from auth import CurrentUserIdDep, create_token
+from src.core.security import CurrentUserIdDep, create_token
 from pydantic import BaseModel
 
 router = APIRouter(prefix="/test", tags=["测试"])

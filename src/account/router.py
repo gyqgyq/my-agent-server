@@ -16,9 +16,9 @@ from src.account.refresh_token_store import (
     get_user_id_for_refresh,
     save_refresh,
 )
-from auth import create_token
-from core.settings import settings
-from database.postgres import SessionDep
+from src.core.security import create_token
+from src.core.settings import settings
+from src.db.postgres import SessionDep
 
 logger = logging.getLogger(__name__)
 

@@ -8,7 +8,7 @@ from datetime import datetime, timezone
 from typing import TYPE_CHECKING, Any
 
 if TYPE_CHECKING:
-    from core.settings import Settings
+    from src.core.settings import Settings
 
 # LogRecord 内置属性，不参与「结构化 extra」合并，避免污染 JSON
 _LOG_RECORD_BUILTINS = frozenset(

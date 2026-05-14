@@ -4,7 +4,7 @@ import hashlib
 
 import redis.asyncio as redis
 
-from database.redis_keys import refresh_token_storage_key
+from src.db.redis_keys import refresh_token_storage_key
 
 
 def refresh_redis_key(refresh_token: str) -> str:

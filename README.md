@@ -3,7 +3,7 @@
 ## 本地开发
 
 ```bash
-uv run uvicorn main:app --reload
+uv run uvicorn src:main:app --reload
 ```
 
 ## 日志与生产环境建议

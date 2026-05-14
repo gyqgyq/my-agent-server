@@ -13,8 +13,8 @@ from langchain.messages import HumanMessage
 from langchain_core.messages import BaseMessage
 from pydantic import BaseModel, Field, field_validator
 
-from auth import CurrentUserIdDep
-from core.settings import settings
+from src.core.security import CurrentUserIdDep
+from src.core.settings import settings
 from src.agent.prompt import system_prompt
 from src.agent.tools import get_weather
 

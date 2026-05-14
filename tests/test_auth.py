@@ -7,12 +7,12 @@ from datetime import datetime, timedelta, timezone
 import jwt
 import pytest
 
-from auth import AuthTokenExpired, AuthTokenInvalid, create_token, verify_token
+from src.core.security import AuthTokenExpired, AuthTokenInvalid, create_token, verify_token
 
 
 @pytest.fixture
 def jwt_setup(monkeypatch: pytest.MonkeyPatch) -> None:
-    from core import settings as settings_mod
+    from src.core import settings as settings_mod
 
     monkeypatch.setattr(settings_mod.settings, "JWT_SECRET", "unit-test-jwt-secret-key-32bytes")
     monkeypatch.setattr(settings_mod.settings, "JWT_ALGORITHM", "HS256")
@@ -30,7 +30,7 @@ def test_verify_expired(jwt_setup: None) -> None:
 
 
 def test_verify_wrong_secret(jwt_setup: None) -> None:
-    from core import settings as settings_mod
+    from src.core import settings as settings_mod
 
     t = create_token(1)
     payload = jwt.decode(
@@ -44,7 +44,7 @@ def test_verify_wrong_secret(jwt_setup: None) -> None:
 
 
 def test_verify_missing_user_id_claim(jwt_setup: None) -> None:
-    from core import settings as settings_mod
+    from src.core import settings as settings_mod
 
     exp = datetime.now(timezone.utc) + timedelta(minutes=15)
     t = jwt.encode(

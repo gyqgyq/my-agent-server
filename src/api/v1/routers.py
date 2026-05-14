@@ -2,7 +2,7 @@ from fastapi import APIRouter
 
 from src.account.router import router as account_router
 from src.agent.router import router as agent_router
-from core.settings import settings
+from src.core.settings import settings
 
 routers = APIRouter(prefix=settings.API_PREFIX)
 if settings.DEBUG:

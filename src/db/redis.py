@@ -3,7 +3,7 @@ import logging
 import redis.asyncio as redis
 from redis.exceptions import ConnectionError, TimeoutError as RedisTimeoutError
 
-from core.settings import settings
+from src.core.settings import settings
 
 logger = logging.getLogger(__name__)
 
