@@ -3,7 +3,7 @@ import json
 import logging
 from collections.abc import AsyncIterator
 from functools import lru_cache
-from typing import Annotated, Any
+from typing import Any
 
 from fastapi import APIRouter, HTTPException, Query, Request, status
 from fastapi.responses import StreamingResponse
@@ -95,9 +95,11 @@ async def _agent_sse(
     logger.info("agent_sse_start", extra=log_extra)
     try:
         async with asyncio.timeout(settings.AGENT_SSE_TIMEOUT_SECONDS):
+            # updates：节点结束后的整块状态（易呈现「一段话一次性」）；
+            # messages：模型 token/分片流（AIMessageChunk.content 多为增量）。
             async for chunk in agent.astream(
                 {"messages": [HumanMessage(content=text)]},
-                stream_mode="updates",
+                stream_mode=["messages", "updates"],
                 version="v2",
             ):
                 if await request.is_disconnected():
@@ -114,38 +116,6 @@ async def _agent_sse(
     finally:
         yield "data: [DONE]\n\n"
         logger.info("agent_sse_end", extra=log_extra)
-
-
-def _normalize_get_message(msg: str) -> str:
-    s = msg.strip()
-    if not s:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail="消息不能为空或仅空白",
-        )
-    return s
-
-
-@router.get("/get_msg")
-async def get_msg(
-    request: Request,
-    msg: Annotated[
-        str,
-        Query(
-            min_length=1,
-            max_length=settings.AGENT_GET_MSG_MAX_CHARS,
-            description="用户输入（短句；长文本请用 POST /agent/chat/stream）",
-        ),
-    ],
-    user_id: CurrentUserIdDep,
-) -> StreamingResponse:
-    """SSE（GET）。浏览器原生 EventSource 无法带 Bearer，生产环境请用 POST + fetch 流式并携带 Authorization。"""
-    text = _normalize_get_message(msg)
-    return StreamingResponse(
-        _agent_sse(request, text, user_id=user_id),
-        media_type="text/event-stream",
-        headers=_SSE_HEADERS,
-    )
 
 
 @router.post("/chat/stream")

@@ -26,7 +26,7 @@ class Settings(BaseSettings):
     ASYNC_DATABASE_URL: str
     JWT_SECRET: str
     JWT_ALGORITHM: str = "HS256"
-    JWT_ACCESS_TOKEN_EXPIRE_MINUTES: int = 15
+    JWT_ACCESS_TOKEN_EXPIRE_MINUTES: int = 60
     JWT_REFRESH_TOKEN_EXPIRE_DAYS: int = 7
     DEBUG: bool
     # 运维探活 `/server-status`：未设置或空字符串时该路由始终 404
