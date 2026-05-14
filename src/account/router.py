@@ -10,8 +10,8 @@ from pydantic import BaseModel, Field, field_validator
 from sqlalchemy import select
 from sqlalchemy.exc import IntegrityError
 
-from account.models import User
-from account.refresh_token_store import (
+from src.account.models import User
+from src.account.refresh_token_store import (
     delete_refresh,
     get_user_id_for_refresh,
     save_refresh,
