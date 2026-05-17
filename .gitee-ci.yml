@@ -1,51 +1,74 @@
-name: Python 部署到腾讯云 Docker
+stages:
+  - build
+  - push
+  - deploy
 
-# 代码推送到 main 分支就自动部署
-on:
-  push:
-    branches:
-      - main
+variables:
+  IMAGE_NAME: my-python-app
+  IMAGE_TAG: $CI_COMMIT_SHA
+  REGISTRY: ccr.ccs.tencentyun.com    # 腾讯云镜像仓库地址
+  NAMESPACE: your-namespace           # 命名空间
 
-jobs:
-  build-and-deploy:
-    runs-on: ubuntu-latest
-    steps:
-      - name: 拉取代码
-        uses: actions/checkout@v4
+# 阶段1：构建 Docker 镜像
+build:
+  stage: build
+  image: docker:latest
+  services:
+    - docker:dind
+  script:
+    - docker build -t $IMAGE_NAME:$IMAGE_TAG .
+    - docker tag $IMAGE_NAME:$IMAGE_TAG $REGISTRY/$NAMESPACE/$IMAGE_NAME:$IMAGE_TAG
+    - docker tag $IMAGE_NAME:$IMAGE_TAG $REGISTRY/$NAMESPACE/$IMAGE_NAME:latest
+  only:
+    - master
 
-      # 1. 构建 Docker 镜像
-      - name: 构建镜像
-        run: |
-          docker build -t my-python-app .
+# 阶段2：推送镜像到仓库
+push:
+  stage: push
+  image: docker:latest
+  services:
+    - docker:dind
+  script:
+    - echo $DOCKER_PWD | docker login $REGISTRY -u $DOCKER_USER --password-stdin
+    - docker push $REGISTRY/$NAMESPACE/$IMAGE_NAME:$IMAGE_TAG
+    - docker push $REGISTRY/$NAMESPACE/$IMAGE_NAME:latest
+  only:
+    - master
 
-      # 2. 推送到腾讯云镜像仓库
-      - name: 推送到腾讯云
-        run: |
-          docker login ccr.ccs.tencentyun.com -u ${{ secrets.DOCKER_USER }} -p ${{ secrets.DOCKER_PWD }}
-          docker tag my-python-app:latest ccr.ccs.tencentyun.com/你的命名空间/python-app:latest
-          docker push ccr.ccs.tencentyun.com/你的命名空间/python-app:latest
-
-      # 3. 远程登录服务器，拉镜像并运行
-      - name: 部署到腾讯云服务器
-        uses: gitee/actions/ssh@v1
-        with:
-          host: ${{ secrets.SERVER_HOST }}
-          username: ${{ secrets.SERVER_USER }}
-          key: ${{ secrets.SERVER_SSH_KEY }}
-          script: |
-            # 登录镜像仓库
-            docker login ccr.ccs.tencentyun.com -u ${{ secrets.DOCKER_USER }} -p ${{ secrets.DOCKER_PWD }}
-            
-            # 停止旧容器
-            docker stop python-app || true
-            docker rm python-app || true
-            
-            # 拉最新镜像
-            docker pull ccr.ccs.tencentyun.com/你的命名空间/python-app:latest
-            
-            # 启动新容器
-            docker run -d \
-              --name python-app \
-              --restart always \
-              -p 80:8000 \
-              ccr.ccs.tencentyun.com/你的命名空间/python-app:latest
+# 阶段3：部署到服务器
+deploy:
+  stage: deploy
+  image: alpine:latest
+  before_script:
+    - apk add --no-cache openssh-client
+    - eval $(ssh-agent -s)
+    - echo "$SERVER_SSH_KEY" | tr -d '\r' | ssh-add -
+    - mkdir -p ~/.ssh
+    - chmod 700 ~/.ssh
+    - ssh-keyscan -H $SERVER_HOST >> ~/.ssh/known_hosts
+  script:
+    - |
+      ssh $SERVER_USER@$SERVER_HOST << 'EOF'
+        # 登录镜像仓库
+        echo $DOCKER_PWD | docker login $REGISTRY -u $DOCKER_USER --password-stdin
+        
+        # 拉取最新镜像
+        docker pull $REGISTRY/$NAMESPACE/$IMAGE_NAME:latest
+        
+        # 停止并删除旧容器
+        docker stop $IMAGE_NAME || true
+        docker rm $IMAGE_NAME || true
+        
+        # 启动新容器
+        docker run -d \
+          --name $IMAGE_NAME \
+          --restart always \
+          -p 8080:8080 \
+          -v /data/logs:/app/logs \
+          $REGISTRY/$NAMESPACE/$IMAGE_NAME:latest
+        
+        # 清理旧镜像
+        docker image prune -f
+      EOF
+  only:
+    - master
