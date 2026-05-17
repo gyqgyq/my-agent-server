@@ -23,7 +23,7 @@ uv run uvicorn src.main:app --reload
 | 变量 | 说明 |
 |------|------|
 | `LOG_LEVEL` | 如 `INFO`、`WARNING`、`DEBUG`；生产建议 `INFO` 或更严。 |
-| `LOG_FORMAT` | `text`（本地可读）或 `json`（单行 JSON，便于 Loki / ELK 等采集）。生产建议在 `.env.prod` 中设为 `json`。 |
+| `LOG_FORMAT` | `text`（本地可读）或 `json`（单行 JSON，便于 Loki / ELK 等采集）。生产建议在 `/opt/my-agent-server/.env` 中设为 `json`。 |
 | `DEBUG` | `false` 时关闭 `/docs`、`/redoc`、`/openapi.json`，且不挂载调试用 `/api/test/*` 路由。生产务必为 `false`。 |
 | `SERVER_STATUS_TOKEN` | 设置后，`GET /server-status?token=…` 校验通过才返回探活 JSON；未设置或空则始终 404。 |
 | `CORS_ORIGINS` | 逗号分隔的浏览器 `Origin`；留空则不注册 CORS 中间件（由网关或同源处理）。 |
@@ -113,7 +113,7 @@ psql "$ASYNC_DATABASE_URL" -f migrations/002_works_documents.sql
 ### 前置条件
 
 1. 目标 PostgreSQL 已执行 `migrations/001_pgvector.sql`、`migrations/002_works_documents.sql`（在宿主机或能连库的机器上执行，不必在容器内）。
-2. 准备好生产环境变量文件（可复制 `.env.sample` 为 `.env.prod`），至少包含 `ASYNC_DATABASE_URL`、`JWT_SECRET`、`DEBUG=false`、`REDIS_*`、`GOOGLE_API_KEY`、`ARK_API_KEY`、`RAG_EMBEDDING_MODEL` 等，字段说明见上文表格与 `.env.sample`。
+2. 准备好生产环境变量文件（可复制 `.env.sample` 为 `/opt/my-agent-server/.env`），至少包含 `ASYNC_DATABASE_URL`、`JWT_SECRET`、`DEBUG=false`、`REDIS_*`、`GOOGLE_API_KEY`、`ARK_API_KEY`、`RAG_EMBEDDING_MODEL` 等，字段说明见上文表格与 `.env.sample`。
 3. 容器需能访问数据库、Redis 及方舟 / Google API（防火墙与安全组放行对应端口）。
 
 ### 构建镜像
@@ -149,8 +149,8 @@ docker build -t fastapi-first:1.0.0 .
 
 ```bash
 docker run -d \
-  --name fastapi-first \
-  --env-file .env.prod \
+  --name my-agent-serve \
+  --env-file /opt/my-agent-server/.env \
   -p 8000:8000 \
   --restart unless-stopped \
   fastapi-first:latest
@@ -188,7 +188,7 @@ GET /server-status?token=<SERVER_STATUS_TOKEN>
 ```bash
 docker build -t fastapi-first:latest .
 docker stop fastapi-first && docker rm fastapi-first
-docker run -d --name fastapi-first --env-file .env.prod -p 8000:8000 --restart unless-stopped fastapi-first:latest
+docker run -d --name fastapi-first --env-file /opt/my-agent-server/.env -p 8000:8000 --restart unless-stopped fastapi-first:latest
 ```
 
 或使用新标签滚动替换，避免覆盖正在运行的 `latest` 层。
