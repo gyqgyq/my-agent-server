@@ -9,14 +9,15 @@ from fastapi import APIRouter, HTTPException, Query, Request, status
 from fastapi.responses import StreamingResponse
 from langchain.agents import create_agent
 from langchain.chat_models import init_chat_model
-from langchain.messages import HumanMessage
+from langchain.messages import HumanMessage, SystemMessage
 from langchain_core.messages import BaseMessage
 from pydantic import BaseModel, Field, field_validator
 
 from src.core.security import CurrentUserIdDep
 from src.core.settings import settings
-from src.agent.prompt import system_prompt
+from src.db.postgres import SessionDep
 from src.agent.tools import get_weather
+from src.rag import service as rag_service
 
 logger = logging.getLogger(__name__)
 
@@ -39,7 +40,7 @@ def _get_agent():
     return create_agent(
         model=model,
         tools=[get_weather],
-        system_prompt=system_prompt,
+        system_prompt="",
     )
 
 
@@ -72,6 +73,7 @@ class AgentStreamBody(BaseModel):
     """POST 流式对话正文（推荐生产使用，避免 GET URL 长度与 query 进日志问题）。"""
 
     message: str = Field(..., min_length=1)
+    work_id: int = Field(..., ge=1, description="当前激活作品（知识库）ID")
 
     @field_validator("message")
     @classmethod
@@ -89,16 +91,27 @@ async def _agent_sse(
     text: str,
     *,
     user_id: int,
+    work_id: int,
+    combined_system: str,
 ) -> AsyncIterator[str]:
     agent = _get_agent()
-    log_extra = {"user_id": user_id, "path": str(request.url.path)}
+    log_extra = {
+        "user_id": user_id,
+        "work_id": work_id,
+        "path": str(request.url.path),
+    }
     logger.info("agent_sse_start", extra=log_extra)
     try:
         async with asyncio.timeout(settings.AGENT_SSE_TIMEOUT_SECONDS):
             # updates：节点结束后的整块状态（易呈现「一段话一次性」）；
             # messages：模型 token/分片流（AIMessageChunk.content 多为增量）。
             async for chunk in agent.astream(
-                {"messages": [HumanMessage(content=text)]},
+                {
+                    "messages": [
+                        SystemMessage(content=combined_system),
+                        HumanMessage(content=text),
+                    ]
+                },
                 stream_mode=["messages", "updates"],
                 version="v2",
             ):
@@ -123,10 +136,31 @@ async def chat_stream(
     request: Request,
     body: AgentStreamBody,
     user_id: CurrentUserIdDep,
+    session: SessionDep,
 ) -> StreamingResponse:
-    """SSE（POST，推荐生产）：`Authorization: Bearer <JWT>` + JSON `{\"message\": \"...\"}`。"""
+    """SSE（POST）：JWT + JSON `{\"message\": \"...\", \"work_id\": 1}`；先 RAG 检索再生成。"""
+    work, retrieved = await rag_service.retrieve_for_user(
+        session, user_id, body.work_id, body.message
+    )
+    combined = rag_service.build_combined_system_prompt(
+        work.title, body.message, retrieved
+    )
+    logger.info(
+        "agent_rag_retrieved",
+        extra={
+            "user_id": user_id,
+            "work_id": body.work_id,
+            "retrieved_chunks": len(retrieved),
+        },
+    )
     return StreamingResponse(
-        _agent_sse(request, body.message, user_id=user_id),
+        _agent_sse(
+            request,
+            body.message,
+            user_id=user_id,
+            work_id=body.work_id,
+            combined_system=combined,
+        ),
         media_type="text/event-stream",
         headers=_SSE_HEADERS,
     )

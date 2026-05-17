@@ -59,6 +59,44 @@ logger.info("处理完成", extra={"order_id": "123"})
 
 不要在日志中输出 `Authorization`、Cookie、URL query 中的 token、密码或 JWT 载荷。
 
+## RAG 与 pgvector
+
+对话与检索依赖 PostgreSQL **pgvector** 扩展及业务表。应用**启动时**会检查 `pgvector` 是否已安装；未安装则进程退出（不会自动 `CREATE EXTENSION`，通常需超级用户权限）。
+
+### 数据库迁移（按顺序执行）
+
+```bash
+psql "$ASYNC_DATABASE_URL" -f migrations/001_pgvector.sql
+psql "$ASYNC_DATABASE_URL" -f migrations/002_works_documents.sql
+```
+
+首次文档入库时，`langchain-postgres` 会自动创建 `langchain_pg_collection`、`langchain_pg_embedding` 等向量表。
+
+### RAG 相关环境变量
+
+见 `.env.sample` 中 `RAG_*` 注释项（如 `RAG_EMBEDDING_MODEL`、`RAG_TOP_K`、`RAG_VECTOR_COLLECTION`）。Embedding 与 Agent 共用 `GOOGLE_API_KEY`。
+
+### HTTP API（均需 `Authorization: Bearer <JWT>`）
+
+| 方法 | 路径 | 说明 |
+|------|------|------|
+| POST | `/api/works` | 创建作品 `{ "title": "..." }` |
+| GET | `/api/works` | 作品列表 |
+| GET/PATCH/DELETE | `/api/works/{work_id}` | 详情 / 重命名 / 级联删除向量 |
+| GET | `/api/works/{work_id}/documents` | 文档列表 |
+| POST | `/api/works/{work_id}/documents` | 上传 `.txt` / `.md`（multipart `file`） |
+| DELETE | `/api/works/{work_id}/documents/{document_id}` | 删除文档及向量 |
+| POST | `/api/agent/chat/stream` | SSE；JSON 含 `message` 与 **`work_id`** |
+
+### 手工验收
+
+1. 执行上述 SQL 迁移后启动应用。
+2. 登录获取 JWT → `POST /api/works` 创建作品 → 上传 sample.md。
+3. `POST /api/agent/chat/stream`，body：`{"message":"…","work_id":1}`，确认响应基于文档内容。
+4. `DELETE /api/works/{id}` 后，同 `work_id` 对话应无检索片段。
+
+**注意**：更换 `RAG_EMBEDDING_MODEL` 会改变向量维度，需清空并重建向量数据。
+
 ## 测试
 
 单元测试对 `Settings` 等使用显式构造参数或 monkeypatch，**不应依赖**本机根目录 `.env` 才能通过。安装开发依赖后运行：

@@ -15,6 +15,9 @@ dependencies = [
     "python-dotenv>=1.2.2",
     "redis>=7.4.0",
     "sqlalchemy[asyncio]>=2.0.49",
+    "langchain-postgres>=0.0.17",
+    "langchain-text-splitters>=1.1.2",
+    "pgvector>=0.3.6",
 ]
 
 [dependency-groups]

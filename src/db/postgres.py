@@ -43,6 +43,22 @@ SessionLocal = async_sessionmaker(
 )
 
 
+async def ensure_pgvector_extension() -> None:
+    """确认 pgvector 已安装（需 DBA 先执行 migrations/001_pgvector.sql）。"""
+    async with engine.connect() as conn:
+        row = (
+            await conn.execute(
+                text("SELECT 1 FROM pg_extension WHERE extname = 'vector'")
+            )
+        ).first()
+    if row is None:
+        raise RuntimeError(
+            "PostgreSQL 未启用 pgvector 扩展。"
+            "请由具备权限的角色执行 migrations/001_pgvector.sql"
+        )
+    logger.info("pgvector_extension_ok")
+
+
 async def postgres_connect() -> None:
     """启动时建连并执行 SELECT 1，成功打 postgres_connected 日志。"""
     try:

@@ -14,7 +14,7 @@ from src.core.logging_config import setup_logging
 from src.core.settings import settings
 from src.core.middleware import my_middleware
 from src.api.v1.routers import routers
-from src.db.postgres import engine, postgres_connect
+from src.db.postgres import engine, ensure_pgvector_extension, postgres_connect
 from src.db.redis import redis_connect
 
 logger = logging.getLogger(__name__)
@@ -39,6 +39,7 @@ class ServerStatusResponse(BaseModel):
 async def lifespan(app: FastAPI):
     setup_logging(settings)
     await postgres_connect()
+    await ensure_pgvector_extension()
     app.state.redis = await redis_connect()
     yield
     await engine.dispose()

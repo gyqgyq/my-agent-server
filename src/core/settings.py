@@ -67,11 +67,32 @@ class Settings(BaseSettings):
     # POST body message 最大字符数
     AGENT_BODY_MAX_CHARS: int = 32000
 
+    # RAG / pgvector（Google Embeddings + langchain-postgres PGVector）
+    RAG_EMBEDDING_MODEL: str = "models/text-embedding-004"
+    RAG_CHUNK_SIZE: int = 1000
+    RAG_CHUNK_OVERLAP: int = 200
+    RAG_TOP_K: int = 4
+    RAG_MAX_UPLOAD_BYTES: int = 5_242_880
+    RAG_VECTOR_COLLECTION: str = "wensu_chunks"
+
     def parsed_cors_origins(self) -> list[str]:
         raw = self.CORS_ORIGINS.strip()
         if not raw:
             return []
         return [o.strip() for o in raw.split(",") if o.strip()]
+
+    def sync_database_url(self) -> str:
+        """PGVector 使用同步 psycopg 连接。"""
+        u = self.ASYNC_DATABASE_URL.strip()
+        if u.startswith("postgresql+psycopg_async://"):
+            return u.replace(
+                "postgresql+psycopg_async://",
+                "postgresql+psycopg://",
+                1,
+            )
+        if u.startswith("postgresql://"):
+            return u.replace("postgresql://", "postgresql+psycopg://", 1)
+        return u
 
 
 @lru_cache()
