@@ -1,74 +1,74 @@
+# Gitee Go 流水线（社区版可用；非 GitLab CI 语法）
+# 文档：https://help.gitee.com/gitee-go/pipeline/scheduling
+#
+# 构建阶段 build@docker：在 Gitee 官方「共享构建资源」上执行（无需自建 Runner）。
+# 部署阶段 shell@agent：在已接入「主机组」的 CVM 上执行（非共享构建机）。
+# 若尚未配置主机组，可仅运行 build_push，再在服务器按 README 手动 docker pull/run。
+version: "1.0"
+name: fastapi-first-deploy
+displayName: FastAPI 构建并部署
+
+triggers:
+  push:
+    branches:
+      precise:
+        - main
+        - master
+
 stages:
-  - build_push
-  - deploy
+  - stage:
+      name: build_push
+      displayName: 构建并推送镜像
+      strategy: naturally
+      trigger: auto
+      steps:
+        - step: build@docker
+          name: build_docker
+          displayName: 推送至腾讯云 TCR
+          repository: ccr.ccs.tencentyun.com/my-agent-server
+          username: ${DOCKER_USER}
+          password: ${DOCKER_PWD}
+          tag: fastapi-first:${GITEE_PIPELINE_BUILD_NUMBER}
+          dockerfile: ./Dockerfile
+          isCache: false
 
-variables:
-  REGISTRY: ccr.ccs.tencentyun.com
-  NAMESPACE: my-agent-server
-  IMAGE_NAME: fastapi-first
-  CONTAINER_NAME: fastapi-first
-  APP_PORT: "8000"
-  IMAGE_TAG: $CI_COMMIT_SHORT_SHA
-  # Gitee 流水线变量（可选，未设则用下列默认）
-  DEPLOY_ENV_FILE: /opt/my-agent-server/.env
-  HOST_PORT: "8000"
+  - stage:
+      name: deploy
+      displayName: 部署到 CVM
+      strategy: naturally
+      # 未配置主机组时可改为 manual，构建成功后手动点「部署」；或删除本阶段改用手动部署
+      trigger: manual
+      steps:
+        - step: shell@agent
+          name: deploy_container
+          displayName: 拉取镜像并启动容器
+          # 在 Gitee Go「主机管理」创建主机组后，将唯一标识填到流水线变量 DEPLOY_HOST_GROUP
+          hostGroupID: ${DEPLOY_HOST_GROUP}
+          script: |
+            set -euo pipefail
+            IMAGE="${GITEE_DOCKER_IMAGE}"
+            CONTAINER_NAME="fastapi-first"
+            ENV_FILE="${DEPLOY_ENV_FILE:-/opt/my-agent-server/.env}"
+            HOST_PORT="${HOST_PORT:-8000}"
+            APP_PORT="8000"
 
-build_push:
-  stage: build_push
-  image: docker:24-cli
-  services:
-    - name: docker:24-dind
-      alias: docker
-  variables:
-    DOCKER_TLS_CERTDIR: "/certs"
-    DOCKER_HOST: tcp://docker:2376
-    DOCKER_CERT_PATH: "$DOCKER_TLS_CERTDIR/client"
-    DOCKER_TLS_VERIFY: "1"
-  before_script:
-    - echo "$DOCKER_PWD" | docker login "$REGISTRY" -u "$DOCKER_USER" --password-stdin
-  script:
-    - export FULL_IMAGE="$REGISTRY/$NAMESPACE/$IMAGE_NAME"
-    - docker build -t "$FULL_IMAGE:$IMAGE_TAG" -t "$FULL_IMAGE:latest" .
-    - docker push "$FULL_IMAGE:$IMAGE_TAG"
-    - docker push "$FULL_IMAGE:latest"
-  only:
-    - main
-    - master
+            echo "${DOCKER_PWD}" | docker login ccr.ccs.tencentyun.com -u "${DOCKER_USER}" --password-stdin
+            docker pull "${IMAGE}"
 
-deploy:
-  stage: deploy
-  image: alpine:3.20
-  before_script:
-    - apk add --no-cache openssh-client
-    - eval "$(ssh-agent -s)"
-    - echo "$SERVER_SSH_KEY" | tr -d '\r' | ssh-add -
-    - mkdir -p ~/.ssh
-    - chmod 700 ~/.ssh
-    - ssh-keyscan -H "$SERVER_HOST" >> ~/.ssh/known_hosts
-  script:
-    - export FULL_IMAGE="$REGISTRY/$NAMESPACE/$IMAGE_NAME"
-    - export HOST_PORT="${HOST_PORT:-8000}"
-    - export DEPLOY_ENV_FILE="${DEPLOY_ENV_FILE:-/opt/my-agent-server/.env}"
-    - |
-      ssh "$SERVER_USER@$SERVER_HOST" bash -s <<EOF
-      set -euo pipefail
-      echo "$DOCKER_PWD" | docker login "$REGISTRY" -u "$DOCKER_USER" --password-stdin
-      docker pull "$FULL_IMAGE:latest"
-      docker stop "$CONTAINER_NAME" 2>/dev/null || true
-      docker rm "$CONTAINER_NAME" 2>/dev/null || true
-      if [ ! -f "$DEPLOY_ENV_FILE" ]; then
-        echo "缺少环境文件: $DEPLOY_ENV_FILE（请先在服务器创建并填写 .env）" >&2
-        exit 1
-      fi
-      docker run -d \
-        --name "$CONTAINER_NAME" \
-        --restart unless-stopped \
-        -p "${HOST_PORT}:${APP_PORT}" \
-        --env-file "$DEPLOY_ENV_FILE" \
-        "$FULL_IMAGE:latest"
-      docker image prune -f
-      docker ps --filter "name=$CONTAINER_NAME"
-      EOF
-  only:
-    - main
-    - master
+            docker stop "${CONTAINER_NAME}" 2>/dev/null || true
+            docker rm "${CONTAINER_NAME}" 2>/dev/null || true
+
+            if [ ! -f "${ENV_FILE}" ]; then
+              echo "缺少环境文件: ${ENV_FILE}（请先在服务器创建并填写 .env）" >&2
+              exit 1
+            fi
+
+            docker run -d \
+              --name "${CONTAINER_NAME}" \
+              --restart unless-stopped \
+              -p "${HOST_PORT}:${APP_PORT}" \
+              --env-file "${ENV_FILE}" \
+              "${IMAGE}"
+
+            docker image prune -f
+            docker ps --filter "name=${CONTAINER_NAME}"
