@@ -22,6 +22,20 @@ def map_embedding_error(exc: BaseException) -> HTTPException:
             status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
             detail="无法连接火山方舟 Embedding 服务，请检查网络与 RAG_EMBEDDING_BASE_URL",
         )
+    if isinstance(exc, httpx.HTTPStatusError):
+        if exc.response.status_code == 400:
+            return HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail=(
+                    "Embedding 请求参数无效，请检查 RAG_EMBEDDING_MODEL、"
+                    "RAG_EMBEDDING_DIMENSIONS 是否与 Doubao-embedding-vision 接入点一致"
+                ),
+            )
+        if exc.response.status_code >= 500:
+            return HTTPException(
+                status_code=status.HTTP_502_BAD_GATEWAY,
+                detail="Embedding 服务端错误",
+            )
     if isinstance(exc, (APIConnectionError, APITimeoutError)):
         return HTTPException(
             status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
@@ -30,11 +44,18 @@ def map_embedding_error(exc: BaseException) -> HTTPException:
                 "请检查 ARK_API_KEY、RAG_EMBEDDING_BASE_URL、RAG_EMBEDDING_MODEL"
             ),
         )
+    if isinstance(exc, APIStatusError) and exc.status_code == 400:
+        return HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=(
+                "Embedding 请求参数无效，请检查 RAG_EMBEDDING_MODEL、"
+                "RAG_EMBEDDING_DIMENSIONS 是否与方舟接入点一致"
+            ),
+        )
     if isinstance(exc, APIStatusError) and exc.status_code >= 500:
-        detail = "Embedding 服务端错误"
         return HTTPException(
             status_code=status.HTTP_502_BAD_GATEWAY,
-            detail=detail,
+            detail="Embedding 服务端错误",
         )
     msg = str(exc).lower()
     if "timeout" in msg or "10060" in msg or "connect" in msg:

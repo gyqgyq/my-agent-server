@@ -67,15 +67,17 @@ class Settings(BaseSettings):
     # POST body message 最大字符数
     AGENT_BODY_MAX_CHARS: int = 32000
 
-    # RAG / pgvector（火山方舟 Doubao-embedding + langchain-postgres PGVector）
+    # RAG / pgvector（火山方舟 Doubao-embedding-vision + langchain-postgres PGVector）
     ARK_API_KEY: str
-    # OpenAI 兼容根路径（勿带 /embeddings；勿用 /process 后缀）
-    # LAS 算子 Key（las- 开头）: https://operator.las.cn-beijing.volces.com/api/v1
+    # 方舟 API 根路径（勿带 /embeddings；勿用 /process 后缀）
     # 方舟 Key: https://ark.cn-beijing.volces.com/api/v3
-    RAG_EMBEDDING_BASE_URL: str = "https://operator.las.cn-beijing.volces.com/api/v1"
-    # 模型名，如 doubao-embedding、doubao-embedding-large、doubao-embedding-text-240515
+    RAG_EMBEDDING_BASE_URL: str = "https://ark.cn-beijing.volces.com/api/v3"
+    # 推理接入点 ID 或模型名，如 ep-xxx、doubao-embedding-vision-250615
     RAG_EMBEDDING_MODEL: str
+    # vision 模型支持 2048，常用降维 1024（与 PGVector 列维一致）
     RAG_EMBEDDING_DIMENSIONS: int = 1024
+    # 入库时并发调用 /embeddings/multimodal 的上限
+    RAG_EMBEDDING_MAX_CONCURRENCY: int = 8
     RAG_CHUNK_SIZE: int = 1000
     RAG_CHUNK_OVERLAP: int = 200
     RAG_TOP_K: int = 4
