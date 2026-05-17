@@ -1,0 +1,51 @@
+name: Python 部署到腾讯云 Docker
+
+# 代码推送到 main 分支就自动部署
+on:
+  push:
+    branches:
+      - main
+
+jobs:
+  build-and-deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - name: 拉取代码
+        uses: actions/checkout@v4
+
+      # 1. 构建 Docker 镜像
+      - name: 构建镜像
+        run: |
+          docker build -t my-python-app .
+
+      # 2. 推送到腾讯云镜像仓库
+      - name: 推送到腾讯云
+        run: |
+          docker login ccr.ccs.tencentyun.com -u ${{ secrets.DOCKER_USER }} -p ${{ secrets.DOCKER_PWD }}
+          docker tag my-python-app:latest ccr.ccs.tencentyun.com/你的命名空间/python-app:latest
+          docker push ccr.ccs.tencentyun.com/你的命名空间/python-app:latest
+
+      # 3. 远程登录服务器，拉镜像并运行
+      - name: 部署到腾讯云服务器
+        uses: gitee/actions/ssh@v1
+        with:
+          host: ${{ secrets.SERVER_HOST }}
+          username: ${{ secrets.SERVER_USER }}
+          key: ${{ secrets.SERVER_SSH_KEY }}
+          script: |
+            # 登录镜像仓库
+            docker login ccr.ccs.tencentyun.com -u ${{ secrets.DOCKER_USER }} -p ${{ secrets.DOCKER_PWD }}
+            
+            # 停止旧容器
+            docker stop python-app || true
+            docker rm python-app || true
+            
+            # 拉最新镜像
+            docker pull ccr.ccs.tencentyun.com/你的命名空间/python-app:latest
+            
+            # 启动新容器
+            docker run -d \
+              --name python-app \
+              --restart always \
+              -p 80:8000 \
+              ccr.ccs.tencentyun.com/你的命名空间/python-app:latest
