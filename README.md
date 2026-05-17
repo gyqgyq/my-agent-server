@@ -74,7 +74,15 @@ psql "$ASYNC_DATABASE_URL" -f migrations/002_works_documents.sql
 
 ### RAG 相关环境变量
 
-见 `.env.sample` 中 `RAG_*` 注释项（如 `RAG_EMBEDDING_MODEL`、`RAG_TOP_K`、`RAG_VECTOR_COLLECTION`）。Embedding 与 Agent 共用 `GOOGLE_API_KEY`。
+见 `.env.sample` 中 `ARK_API_KEY`、`RAG_*` 项。RAG 向量化使用火山方舟 **[Doubao-embedding](https://www.volcengine.com/docs/6492/2165105?lang=zh)**（OpenAI 兼容 `/embeddings`）；Agent 对话仍使用 `GOOGLE_API_KEY`。
+
+| 变量 | 说明 |
+|------|------|
+| `ARK_API_KEY` | 火山方舟 API Key（控制台创建） |
+| `RAG_EMBEDDING_BASE_URL` | LAS：`https://operator.las.cn-beijing.volces.com/api/v1`；方舟：`https://ark.cn-beijing.volces.com/api/v3`（**不要**加 `/process`） |
+| `RAG_EMBEDDING_MODEL` | 如 `doubao-embedding`、`doubao-embedding-large`、`doubao-embedding-text-240515` |
+
+若曾用其他 Embedding 模型入库，更换模型后需**清空向量并重新上传文档**（维度可能不同）。
 
 ### HTTP API（均需 `Authorization: Bearer <JWT>`）
 

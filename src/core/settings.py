@@ -67,8 +67,15 @@ class Settings(BaseSettings):
     # POST body message 最大字符数
     AGENT_BODY_MAX_CHARS: int = 32000
 
-    # RAG / pgvector（Google Embeddings + langchain-postgres PGVector）
-    RAG_EMBEDDING_MODEL: str = "models/text-embedding-004"
+    # RAG / pgvector（火山方舟 Doubao-embedding + langchain-postgres PGVector）
+    ARK_API_KEY: str
+    # OpenAI 兼容根路径（勿带 /embeddings；勿用 /process 后缀）
+    # LAS 算子 Key（las- 开头）: https://operator.las.cn-beijing.volces.com/api/v1
+    # 方舟 Key: https://ark.cn-beijing.volces.com/api/v3
+    RAG_EMBEDDING_BASE_URL: str = "https://operator.las.cn-beijing.volces.com/api/v1"
+    # 模型名，如 doubao-embedding、doubao-embedding-large、doubao-embedding-text-240515
+    RAG_EMBEDDING_MODEL: str
+    RAG_EMBEDDING_DIMENSIONS: int = 1024
     RAG_CHUNK_SIZE: int = 1000
     RAG_CHUNK_OVERLAP: int = 200
     RAG_TOP_K: int = 4

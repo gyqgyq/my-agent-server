@@ -11,6 +11,7 @@ from sqlalchemy.orm import selectinload
 
 from src.core.settings import settings
 from src.rag import ingest, vectorstore
+from src.rag.errors import map_embedding_error
 from src.rag.models import Document, Work
 
 logger = logging.getLogger(__name__)
@@ -238,12 +239,15 @@ async def upload_document(
             document_id=doc.id,
             filename=filename,
         )
-        count = await asyncio.to_thread(
-            _ingest_sync,
-            lc_docs,
-            user_id=user_id,
-            work_id=work_id,
-            document_id=doc.id,
+        count = await asyncio.wait_for(
+            asyncio.to_thread(
+                _ingest_sync,
+                lc_docs,
+                user_id=user_id,
+                work_id=work_id,
+                document_id=doc.id,
+            ),
+            timeout=settings.RAG_INGEST_TIMEOUT_SECONDS,
         )
         doc.status = "done"
         doc.chunk_count = count
@@ -254,13 +258,13 @@ async def upload_document(
             extra={"work_id": work_id, "document_id": doc.id},
         )
         doc.status = "failed"
-        doc.error_message = str(exc) if settings.DEBUG else "入库失败"
+        http_exc = map_embedding_error(exc)
+        doc.error_message = (
+            str(exc) if settings.DEBUG else http_exc.detail
+        )
         await session.commit()
         await session.refresh(doc)
-        raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=doc.error_message,
-        ) from exc
+        raise http_exc from exc
 
     await session.commit()
     await session.refresh(doc)
@@ -297,13 +301,19 @@ async def retrieve_for_user(
     query: str,
 ) -> tuple[Work, list[LCDocument]]:
     work = await get_work_for_user(session, work_id, user_id)
-    docs = await asyncio.to_thread(
-        vectorstore.similarity_search,
-        query,
-        k=settings.RAG_TOP_K,
-        user_id=user_id,
-        work_id=work_id,
-    )
+    try:
+        docs = await asyncio.wait_for(
+            asyncio.to_thread(
+                vectorstore.similarity_search,
+                query,
+                k=settings.RAG_TOP_K,
+                user_id=user_id,
+                work_id=work_id,
+            ),
+            timeout=settings.RAG_INGEST_TIMEOUT_SECONDS,
+        )
+    except Exception as exc:
+        raise map_embedding_error(exc) from exc
     return work, docs
 
 
