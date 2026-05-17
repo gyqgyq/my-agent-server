@@ -108,7 +108,7 @@ psql "$ASYNC_DATABASE_URL" -f migrations/002_works_documents.sql
 
 ## Docker 部署
 
-镜像使用根目录 `Dockerfile` 构建：依赖由 `uv.lock` 锁定，以非 root 用户运行 Uvicorn，内置 TCP 健康检查（监听 `8000`）。**镜像内不包含 `.env`**（见 `.dockerignore`），配置须在运行时通过环境变量注入。
+镜像使用根目录 `Dockerfile` **多阶段**构建：依赖由 `uv.lock` 锁定（包索引已指向清华源，见 `uv.lock`），运行镜像不含 `uv` / `pyproject.toml`，体积更小；以非 root 用户运行单进程 Uvicorn，内置 TCP 健康检查（监听 `8000`）。**镜像内不包含 `.env`**（见 `.dockerignore`），配置须在运行时通过环境变量注入。
 
 ### 前置条件
 
@@ -118,9 +118,10 @@ psql "$ASYNC_DATABASE_URL" -f migrations/002_works_documents.sql
 
 ### 构建镜像
 
-在仓库根目录执行：
+在仓库根目录执行（建议开启 BuildKit）：
 
 ```bash
+export DOCKER_BUILDKIT=1
 docker build -t fastapi-first:latest .
 ```
 
@@ -129,6 +130,18 @@ docker build -t fastapi-first:latest .
 ```bash
 docker build -t fastapi-first:1.0.0 .
 ```
+
+#### 腾讯云轻量服务器注意
+
+| 问题 | 建议 |
+|------|------|
+| 拉取 `python:3.14-slim`、`ghcr.io/astral-sh/uv` 慢 | 在 `/etc/docker/daemon.json` 配置 **镜像加速**（腾讯云控制台提供的 Docker 加速地址），`systemctl restart docker` 后重试 |
+| 构建时内存不足（LangChain 依赖较多） | 2GB 机型建议先开 **2GB swap**；构建时不要并行跑多个大镜像；失败可看 `dmesg` 是否 OOM |
+| 磁盘紧张 | 构建后执行 `docker image prune -f`；多阶段镜像已去掉构建工具，比单阶段更小 |
+| 运行内存 | **不要**给 Uvicorn 加 `--workers`（默认 1 即可）；RAG 入库与 Agent 流式会短时占内存 |
+| PyPI | 依赖下载走 `uv.lock` 内清华源 URL，一般无需再配 `UV_INDEX_URL` |
+
+首次构建在轻量机上可能需要 **10～20 分钟**（拉基础镜像 + 装依赖），属正常现象。
 
 ### 运行容器
 
