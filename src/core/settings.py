@@ -79,7 +79,15 @@ class Settings(BaseSettings):
     RAG_CHUNK_SIZE: int = 1000
     RAG_CHUNK_OVERLAP: int = 200
     RAG_TOP_K: int = 4
+    # similarity：纯相似度；mmr：相关性与多样性平衡（见 langchain MMR）
+    RAG_SEARCH_TYPE: Literal["similarity", "mmr"] = "similarity"
+    RAG_MMR_FETCH_K: int = 20
+    RAG_MMR_LAMBDA_MULT: float = 0.5
     RAG_MAX_UPLOAD_BYTES: int = 5_242_880
+    # 文档入库（切分 + 批量 embedding 写入）在线程池中的最长等待（秒）
+    RAG_INGEST_TIMEOUT_SECONDS: float = 300.0
+    # 单次检索（query embedding + 向量搜索）的最长等待（秒）
+    RAG_RETRIEVE_TIMEOUT_SECONDS: float = 60.0
     RAG_VECTOR_COLLECTION: str = "wensu_chunks"
 
     def parsed_cors_origins(self) -> list[str]:

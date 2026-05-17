@@ -6,6 +6,9 @@ from langchain_text_splitters import RecursiveCharacterTextSplitter
 
 from src.core.settings import settings
 
+# 中文长文：在段落/句号/逗号处优先切分，减少句中硬断
+_TEXT_SPLIT_SEPARATORS = ["\n\n", "\n", "。", "，", " ", ""]
+
 _CHAPTER_RE = re.compile(
     r"^#+\s*(第[一二三四五六七八九十百千\d]+章[^\n]*)",
     re.MULTILINE,
@@ -28,6 +31,7 @@ def split_text_with_chapters(
     splitter = RecursiveCharacterTextSplitter(
         chunk_size=settings.RAG_CHUNK_SIZE,
         chunk_overlap=settings.RAG_CHUNK_OVERLAP,
+        separators=_TEXT_SPLIT_SEPARATORS,
     )
     raw_chunks = splitter.split_text(content)
     if not raw_chunks:

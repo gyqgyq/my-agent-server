@@ -32,11 +32,6 @@ def map_embedding_error(exc: BaseException) -> HTTPException:
         )
     if isinstance(exc, APIStatusError) and exc.status_code >= 500:
         detail = "Embedding 服务端错误"
-        if exc.status_code == 500 and "/process/embeddings" in str(exc.request.url):
-            detail = (
-                "RAG_EMBEDDING_BASE_URL 配置错误：勿使用 /process 后缀，"
-                "LAS 请用 https://operator.las.cn-beijing.volces.com/api/v1"
-            )
         return HTTPException(
             status_code=status.HTTP_502_BAD_GATEWAY,
             detail=detail,

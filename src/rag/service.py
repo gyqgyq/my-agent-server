@@ -194,13 +194,11 @@ def _ingest_sync(
     work_id: int,
     document_id: int,
 ) -> int:
-    texts = [d.page_content for d in lc_docs]
-    metadatas = [d.metadata for d in lc_docs]
     ids = [
         vectorstore.chunk_vector_id(user_id, work_id, document_id, i)
         for i in range(len(lc_docs))
     ]
-    vectorstore.add_document_chunks(texts=texts, metadatas=metadatas, ids=ids)
+    vectorstore.add_langchain_documents(lc_docs, ids=ids)
     return len(lc_docs)
 
 
@@ -310,7 +308,7 @@ async def retrieve_for_user(
                 user_id=user_id,
                 work_id=work_id,
             ),
-            timeout=settings.RAG_INGEST_TIMEOUT_SECONDS,
+            timeout=settings.RAG_RETRIEVE_TIMEOUT_SECONDS,
         )
     except Exception as exc:
         raise map_embedding_error(exc) from exc

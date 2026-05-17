@@ -27,6 +27,10 @@ def ids_for_document(
     ]
 
 
+def work_metadata_filter(user_id: int, work_id: int) -> dict[str, int]:
+    return {"user_id": user_id, "work_id": work_id}
+
+
 @lru_cache(maxsize=1)
 def get_vectorstore() -> PGVector:
     return PGVector(
@@ -38,16 +42,20 @@ def get_vectorstore() -> PGVector:
     )
 
 
-def add_document_chunks(
-    *,
-    texts: list[str],
-    metadatas: list[dict],
-    ids: list[str],
-) -> list[str]:
-    store = get_vectorstore()
+def _ensure_collection(store: PGVector) -> None:
     store.create_tables_if_not_exists()
     store.create_collection()
-    return store.add_texts(texts=texts, metadatas=metadatas, ids=ids)
+
+
+def add_langchain_documents(
+    documents: list[Document],
+    *,
+    ids: list[str],
+) -> list[str]:
+    """索引阶段：同一 embedding 模型写入 PGVector（与检索共用 get_embeddings）。"""
+    store = get_vectorstore()
+    _ensure_collection(store)
+    return store.add_documents(documents, ids=ids)
 
 
 def delete_vectors_by_ids(ids: list[str]) -> None:
@@ -63,8 +71,15 @@ def similarity_search(
     user_id: int,
     work_id: int,
 ) -> list[Document]:
-    return get_vectorstore().similarity_search(
-        query,
-        k=k,
-        filter={"user_id": user_id, "work_id": work_id},
-    )
+    """按作品作用域检索；RAG_SEARCH_TYPE=mmr 时使用 MMR 降低重复片段。"""
+    store = get_vectorstore()
+    filt = work_metadata_filter(user_id, work_id)
+    if settings.RAG_SEARCH_TYPE == "mmr":
+        return store.max_marginal_relevance_search(
+            query,
+            k=k,
+            fetch_k=settings.RAG_MMR_FETCH_K,
+            lambda_mult=settings.RAG_MMR_LAMBDA_MULT,
+            filter=filt,
+        )
+    return store.similarity_search(query, k=k, filter=filt)
