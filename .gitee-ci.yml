@@ -1,74 +1,74 @@
 stages:
-  - build
-  - push
+  - build_push
   - deploy
 
 variables:
-  IMAGE_NAME: my-python-app
-  IMAGE_TAG: $CI_COMMIT_SHA
-  REGISTRY: ccr.ccs.tencentyun.com    # 腾讯云镜像仓库地址
-  NAMESPACE: your-namespace           # 命名空间
+  REGISTRY: ccr.ccs.tencentyun.com
+  NAMESPACE: my-agent-server
+  IMAGE_NAME: fastapi-first
+  CONTAINER_NAME: fastapi-first
+  APP_PORT: "8000"
+  IMAGE_TAG: $CI_COMMIT_SHORT_SHA
+  # Gitee 流水线变量（可选，未设则用下列默认）
+  DEPLOY_ENV_FILE: /opt/my-agent-server/.env
+  HOST_PORT: "8000"
 
-# 阶段1：构建 Docker 镜像
-build:
-  stage: build
-  image: docker:latest
+build_push:
+  stage: build_push
+  image: docker:24-cli
   services:
-    - docker:dind
+    - name: docker:24-dind
+      alias: docker
+  variables:
+    DOCKER_TLS_CERTDIR: "/certs"
+    DOCKER_HOST: tcp://docker:2376
+    DOCKER_CERT_PATH: "$DOCKER_TLS_CERTDIR/client"
+    DOCKER_TLS_VERIFY: "1"
+  before_script:
+    - echo "$DOCKER_PWD" | docker login "$REGISTRY" -u "$DOCKER_USER" --password-stdin
   script:
-    - docker build -t $IMAGE_NAME:$IMAGE_TAG .
-    - docker tag $IMAGE_NAME:$IMAGE_TAG $REGISTRY/$NAMESPACE/$IMAGE_NAME:$IMAGE_TAG
-    - docker tag $IMAGE_NAME:$IMAGE_TAG $REGISTRY/$NAMESPACE/$IMAGE_NAME:latest
+    - export FULL_IMAGE="$REGISTRY/$NAMESPACE/$IMAGE_NAME"
+    - docker build -t "$FULL_IMAGE:$IMAGE_TAG" -t "$FULL_IMAGE:latest" .
+    - docker push "$FULL_IMAGE:$IMAGE_TAG"
+    - docker push "$FULL_IMAGE:latest"
   only:
+    - main
     - master
 
-# 阶段2：推送镜像到仓库
-push:
-  stage: push
-  image: docker:latest
-  services:
-    - docker:dind
-  script:
-    - echo $DOCKER_PWD | docker login $REGISTRY -u $DOCKER_USER --password-stdin
-    - docker push $REGISTRY/$NAMESPACE/$IMAGE_NAME:$IMAGE_TAG
-    - docker push $REGISTRY/$NAMESPACE/$IMAGE_NAME:latest
-  only:
-    - master
-
-# 阶段3：部署到服务器
 deploy:
   stage: deploy
-  image: alpine:latest
+  image: alpine:3.20
   before_script:
     - apk add --no-cache openssh-client
-    - eval $(ssh-agent -s)
+    - eval "$(ssh-agent -s)"
     - echo "$SERVER_SSH_KEY" | tr -d '\r' | ssh-add -
     - mkdir -p ~/.ssh
     - chmod 700 ~/.ssh
-    - ssh-keyscan -H $SERVER_HOST >> ~/.ssh/known_hosts
+    - ssh-keyscan -H "$SERVER_HOST" >> ~/.ssh/known_hosts
   script:
+    - export FULL_IMAGE="$REGISTRY/$NAMESPACE/$IMAGE_NAME"
+    - export HOST_PORT="${HOST_PORT:-8000}"
+    - export DEPLOY_ENV_FILE="${DEPLOY_ENV_FILE:-/opt/my-agent-server/.env}"
     - |
-      ssh $SERVER_USER@$SERVER_HOST << 'EOF'
-        # 登录镜像仓库
-        echo $DOCKER_PWD | docker login $REGISTRY -u $DOCKER_USER --password-stdin
-        
-        # 拉取最新镜像
-        docker pull $REGISTRY/$NAMESPACE/$IMAGE_NAME:latest
-        
-        # 停止并删除旧容器
-        docker stop $IMAGE_NAME || true
-        docker rm $IMAGE_NAME || true
-        
-        # 启动新容器
-        docker run -d \
-          --name $IMAGE_NAME \
-          --restart always \
-          -p 8080:8080 \
-          -v /data/logs:/app/logs \
-          $REGISTRY/$NAMESPACE/$IMAGE_NAME:latest
-        
-        # 清理旧镜像
-        docker image prune -f
+      ssh "$SERVER_USER@$SERVER_HOST" bash -s <<EOF
+      set -euo pipefail
+      echo "$DOCKER_PWD" | docker login "$REGISTRY" -u "$DOCKER_USER" --password-stdin
+      docker pull "$FULL_IMAGE:latest"
+      docker stop "$CONTAINER_NAME" 2>/dev/null || true
+      docker rm "$CONTAINER_NAME" 2>/dev/null || true
+      if [ ! -f "$DEPLOY_ENV_FILE" ]; then
+        echo "缺少环境文件: $DEPLOY_ENV_FILE（请先在服务器创建并填写 .env）" >&2
+        exit 1
+      fi
+      docker run -d \
+        --name "$CONTAINER_NAME" \
+        --restart unless-stopped \
+        -p "${HOST_PORT}:${APP_PORT}" \
+        --env-file "$DEPLOY_ENV_FILE" \
+        "$FULL_IMAGE:latest"
+      docker image prune -f
+      docker ps --filter "name=$CONTAINER_NAME"
       EOF
   only:
+    - main
     - master

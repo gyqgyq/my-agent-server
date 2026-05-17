@@ -74,13 +74,14 @@ psql "$ASYNC_DATABASE_URL" -f migrations/002_works_documents.sql
 
 ### RAG 相关环境变量
 
-见 `.env.sample` 中 `ARK_API_KEY`、`RAG_*` 项。RAG 向量化使用火山方舟 **[Doubao-embedding](https://www.volcengine.com/docs/6492/2165105?lang=zh)**（OpenAI 兼容 `/embeddings`）；Agent 对话仍使用 `GOOGLE_API_KEY`。
+见 `.env.sample` 中 `ARK_API_KEY`、`RAG_*` 项。RAG 使用火山方舟 **Doubao-embedding-vision**（`POST /embeddings/multimodal`）；Agent 对话仍使用 `GOOGLE_API_KEY`。
 
 | 变量 | 说明 |
 |------|------|
 | `ARK_API_KEY` | 火山方舟 API Key（控制台创建） |
-| `RAG_EMBEDDING_BASE_URL` | LAS：`https://operator.las.cn-beijing.volces.com/api/v1`；方舟：`https://ark.cn-beijing.volces.com/api/v3`（**不要**加 `/process`） |
-| `RAG_EMBEDDING_MODEL` | 如 `doubao-embedding`、`doubao-embedding-large`、`doubao-embedding-text-240515` |
+| `RAG_EMBEDDING_BASE_URL` | 方舟：`https://ark.cn-beijing.volces.com/api/v3`（**不要**加 `/embeddings` 或 `/process`） |
+| `RAG_EMBEDDING_MODEL` | Doubao-embedding-vision 推理接入点，如 `ep-xxx` |
+| `RAG_EMBEDDING_DIMENSIONS` | 常用 `1024`（与接入点一致） |
 
 若曾用其他 Embedding 模型入库，更换模型后需**清空向量并重新上传文档**（维度可能不同）。
 
@@ -104,6 +105,38 @@ psql "$ASYNC_DATABASE_URL" -f migrations/002_works_documents.sql
 4. `DELETE /api/works/{id}` 后，同 `work_id` 对话应无检索片段。
 
 **注意**：更换 `RAG_EMBEDDING_MODEL` 会改变向量维度，需清空并重建向量数据。
+
+## Gitee CI / 腾讯云部署
+
+推送 `main`（或 `master`）分支时，[`.gitee-ci.yml`](.gitee-ci.yml) 会构建镜像并部署到 CVM。
+
+### 流水线变量（Gitee 仓库设置）
+
+| 变量 | 类型 | 说明 |
+|------|------|------|
+| `DOCKER_USER` | Secret | 腾讯云 TCR 用户名 |
+| `DOCKER_PWD` | Secret | TCR 密码 |
+| `SERVER_HOST` | 普通 | 服务器公网 IP |
+| `SERVER_USER` | 普通 | SSH 登录用户 |
+| `SERVER_SSH_KEY` | Secret | SSH 私钥全文 |
+| `DEPLOY_ENV_FILE` | 可选 | 服务器上 `.env` 路径，默认 `/opt/my-agent-server/.env` |
+| `HOST_PORT` | 可选 | 宿主机映射端口，默认 `8000` |
+
+镜像地址：`ccr.ccs.tencentyun.com/my-agent-server/fastapi-first:latest`
+
+### 服务器首次准备
+
+```bash
+sudo mkdir -p /opt/my-agent-server
+# 将 .env.sample 复制为 .env 并按生产填写（DEBUG=false、数据库、Redis、GOOGLE_API_KEY、ARK_API_KEY、RAG_* 等）
+sudo chmod 600 /opt/my-agent-server/.env
+```
+
+1. 安装 Docker；安全组放行 `HOST_PORT`（默认 8000）。
+2. PostgreSQL 已启用 **pgvector** 并完成迁移（见上文「数据库迁移」）。
+3. 确保服务器能访问火山方舟与 Google GenAI（出站 HTTPS）。
+
+部署成功后容器名 `fastapi-first`，日志可用 `docker logs -f fastapi-first` 查看；应出现 `Application startup complete`。
 
 ## 测试
 
