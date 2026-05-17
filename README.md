@@ -106,6 +106,80 @@ psql "$ASYNC_DATABASE_URL" -f migrations/002_works_documents.sql
 
 **注意**：更换 `RAG_EMBEDDING_MODEL` 会改变向量维度，需清空并重建向量数据。
 
+## Docker 部署
+
+镜像使用根目录 `Dockerfile` 构建：依赖由 `uv.lock` 锁定，以非 root 用户运行 Uvicorn，内置 TCP 健康检查（监听 `8000`）。**镜像内不包含 `.env`**（见 `.dockerignore`），配置须在运行时通过环境变量注入。
+
+### 前置条件
+
+1. 目标 PostgreSQL 已执行 `migrations/001_pgvector.sql`、`migrations/002_works_documents.sql`（在宿主机或能连库的机器上执行，不必在容器内）。
+2. 准备好生产环境变量文件（可复制 `.env.sample` 为 `.env.prod`），至少包含 `ASYNC_DATABASE_URL`、`JWT_SECRET`、`DEBUG=false`、`REDIS_*`、`GOOGLE_API_KEY`、`ARK_API_KEY`、`RAG_EMBEDDING_MODEL` 等，字段说明见上文表格与 `.env.sample`。
+3. 容器需能访问数据库、Redis 及方舟 / Google API（防火墙与安全组放行对应端口）。
+
+### 构建镜像
+
+在仓库根目录执行：
+
+```bash
+docker build -t fastapi-first:latest .
+```
+
+可按版本打标签，例如：
+
+```bash
+docker build -t fastapi-first:1.0.0 .
+```
+
+### 运行容器
+
+推荐用 `--env-file` 注入配置（勿把真实密钥提交进镜像）：
+
+```bash
+docker run -d \
+  --name fastapi-first \
+  --env-file .env.prod \
+  -p 8000:8000 \
+  --restart unless-stopped \
+  fastapi-first:latest
+```
+
+说明：
+
+| 项 | 说明 |
+|----|------|
+| `-p 8000:8000` | 宿主机端口映射到容器内 Uvicorn |
+| `--env-file` | 将文件中的键值注入为容器环境变量；`Settings` 从环境变量读取，无需把 `.env` 打进镜像 |
+| `DEBUG` | 生产务必为 `false`（或 `False`），以关闭 `/docs` 等调试面 |
+| `LOG_FORMAT` | 建议 `json`，便于日志采集 |
+| `TRUST_PROXY_HEADERS` | 仅当应用位于**受信**反向代理之后且网关会正确改写 `X-Forwarded-For` 时设为 `true` |
+
+查看日志与健康状态：
+
+```bash
+docker logs -f fastapi-first
+docker inspect --format='{{json .State.Health}}' fastapi-first
+```
+
+若配置了 `SERVER_STATUS_TOKEN`，可在网关后探活：
+
+```text
+GET /server-status?token=<SERVER_STATUS_TOKEN>
+```
+
+### 置于 Nginx / Ingress 之后
+
+对外只暴露反向代理端口；容器仍监听 `8000`。代理需转发 `Host`、`X-Forwarded-For`、`X-Forwarded-Proto` 等头，并在确认头不可被客户端伪造后将应用侧 `TRUST_PROXY_HEADERS=true`。
+
+### 更新发布
+
+```bash
+docker build -t fastapi-first:latest .
+docker stop fastapi-first && docker rm fastapi-first
+docker run -d --name fastapi-first --env-file .env.prod -p 8000:8000 --restart unless-stopped fastapi-first:latest
+```
+
+或使用新标签滚动替换，避免覆盖正在运行的 `latest` 层。
+
 ## 测试
 
 单元测试对 `Settings` 等使用显式构造参数或 monkeypatch，**不应依赖**本机根目录 `.env` 才能通过。安装开发依赖后运行：
