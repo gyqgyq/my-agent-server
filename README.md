@@ -151,6 +151,7 @@ docker build -t fastapi-first:1.0.0 .
 docker run -d \
   --name my-agent-serve \
   --env-file /opt/my-agent-server/.env \
+  --network my-agent-network
   -p 8000:8000 \
   --restart unless-stopped \
   fastapi-first:latest
