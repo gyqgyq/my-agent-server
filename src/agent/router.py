@@ -35,7 +35,7 @@ def _get_agent():
     """首次请求时再建 agent；改环境变量后需重启进程使 lru_cache 失效。"""
     model = init_chat_model(
         settings.AGENT_CHAT_MODEL,
-        google_api_key=settings.GOOGLE_API_KEY,
+        api_key=settings.AGENT_CHAT_API_KEY,
     )
     return create_agent(
         model=model,

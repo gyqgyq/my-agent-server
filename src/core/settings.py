@@ -57,7 +57,7 @@ class Settings(BaseSettings):
     LOG_FORMAT: Literal["json", "text"] = "text"
 
     # llm配置
-    GOOGLE_API_KEY: str
+    AGENT_CHAT_API_KEY: str
     # Agent：`init_chat_model` 的模型标识；改后需重启进程
     AGENT_CHAT_MODEL: str = "google_genai:gemini-2.5-flash"
     # 单次 SSE 流式整段 astream 的最长等待（秒），防挂死连接

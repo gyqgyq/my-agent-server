@@ -28,7 +28,7 @@ uv run uvicorn src.main:app --reload
 | `SERVER_STATUS_TOKEN` | 设置后，`GET /server-status?token=…` 校验通过才返回探活 JSON；未设置或空则始终 404。 |
 | `CORS_ORIGINS` | 逗号分隔的浏览器 `Origin`；留空则不注册 CORS 中间件（由网关或同源处理）。 |
 | `TRUST_PROXY_HEADERS` | 限流用的客户端 IP：仅在为 `true` 时才读取 `X-Forwarded-For` 首段。直连公网时保持 `false`，避免客户端伪造 IP；置于受信反向代理之后且网关会剥离/覆盖不可信链时再设为 `true`。 |
-| `GOOGLE_API_KEY` | LangChain Agent 使用的 Google GenAI API 密钥（必填，见 `core.settings`）。 |
+| `AGENT_CHAT_API_KEY` | LangChain Agent 使用的 Google GenAI API 密钥（必填，见 `core.settings`）。 |
 
 示例见仓库根目录 `.env.sample`。
 
@@ -74,7 +74,7 @@ psql "$ASYNC_DATABASE_URL" -f migrations/002_works_documents.sql
 
 ### RAG 相关环境变量
 
-见 `.env.sample` 中 `ARK_API_KEY`、`RAG_*` 项。RAG 使用火山方舟 **Doubao-embedding-vision**（`POST /embeddings/multimodal`）；Agent 对话仍使用 `GOOGLE_API_KEY`。
+见 `.env.sample` 中 `ARK_API_KEY`、`RAG_*` 项。RAG 使用火山方舟 **Doubao-embedding-vision**（`POST /embeddings/multimodal`）；Agent 对话仍使用 `AGENT_CHAT_API_KEY`。
 
 | 变量 | 说明 |
 |------|------|
@@ -113,7 +113,7 @@ psql "$ASYNC_DATABASE_URL" -f migrations/002_works_documents.sql
 ### 前置条件
 
 1. 目标 PostgreSQL 已执行 `migrations/001_pgvector.sql`、`migrations/002_works_documents.sql`（在宿主机或能连库的机器上执行，不必在容器内）。
-2. 准备好生产环境变量文件（可复制 `.env.sample` 为 `/opt/my-agent-server/.env`），至少包含 `ASYNC_DATABASE_URL`、`JWT_SECRET`、`DEBUG=false`、`REDIS_*`、`GOOGLE_API_KEY`、`ARK_API_KEY`、`RAG_EMBEDDING_MODEL` 等，字段说明见上文表格与 `.env.sample`。
+2. 准备好生产环境变量文件（可复制 `.env.sample` 为 `/opt/my-agent-server/.env`），至少包含 `ASYNC_DATABASE_URL`、`JWT_SECRET`、`DEBUG=false`、`REDIS_*`、`AGENT_CHAT_API_KEY`、`ARK_API_KEY`、`RAG_EMBEDDING_MODEL` 等，字段说明见上文表格与 `.env.sample`。
 3. 容器需能访问数据库、Redis 及方舟 / Google API（防火墙与安全组放行对应端口）。
 
 ### 构建镜像
