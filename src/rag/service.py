@@ -2,6 +2,7 @@ import asyncio
 import logging
 from collections.abc import Sequence
 
+import redis.asyncio as aioredis
 from fastapi import HTTPException, UploadFile, status
 from langchain_core.documents import Document as LCDocument
 from sqlalchemy import select
@@ -10,9 +11,11 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
 from src.core.settings import settings
-from src.rag import ingest, vectorstore
+from src.rag import vectorstore
 from src.rag.errors import map_embedding_error
 from src.rag.models import Document, Work
+from src.rag.queue import IngestJob, enqueue_ingest
+from src.rag import storage
 
 logger = logging.getLogger(__name__)
 
@@ -187,32 +190,27 @@ def _validate_upload(file: UploadFile, raw: bytes) -> None:
         )
 
 
-def _ingest_sync(
-    lc_docs: list[LCDocument],
-    *,
-    user_id: int,
-    work_id: int,
-    document_id: int,
-) -> int:
-    ids = [
-        vectorstore.chunk_vector_id(user_id, work_id, document_id, i)
-        for i in range(len(lc_docs))
-    ]
-    vectorstore.add_langchain_documents(lc_docs, ids=ids)
-    return len(lc_docs)
-
-
 async def upload_document(
     session: AsyncSession,
     work_id: int,
     user_id: int,
     file: UploadFile,
+    *,
+    redis: aioredis.Redis | None,
 ) -> Document:
     await get_work_for_user(session, work_id, user_id)
+    if redis is None:
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="RAG 入库队列不可用，请检查 Redis 配置",
+        )
+
     raw = await file.read()
     _validate_upload(file, raw)
 
     filename = file.filename or "upload.txt"
+    storage.ensure_upload_dir()
+
     doc = Document(
         work_id=work_id,
         filename=filename,
@@ -224,48 +222,55 @@ async def upload_document(
     await session.commit()
     await session.refresh(doc)
 
+    path = storage.document_storage_path(user_id, work_id, doc.id, filename)
     try:
-        text = raw.decode("utf-8")
-        chunks = ingest.split_text_with_chapters(text, filename=filename)
-        if not chunks:
-            raise ValueError("未能从文件中切分出有效文本块")
-
-        lc_docs = ingest.build_langchain_documents(
-            chunks,
-            user_id=user_id,
-            work_id=work_id,
-            document_id=doc.id,
-            filename=filename,
-        )
-        count = await asyncio.wait_for(
-            asyncio.to_thread(
-                _ingest_sync,
-                lc_docs,
-                user_id=user_id,
-                work_id=work_id,
-                document_id=doc.id,
-            ),
-            timeout=settings.RAG_INGEST_TIMEOUT_SECONDS,
-        )
-        doc.status = "done"
-        doc.chunk_count = count
-        doc.error_message = None
-    except Exception as exc:
+        storage.save_upload_bytes(path, raw)
+    except OSError as exc:
         logger.exception(
-            "document_ingest_failed",
+            "document_upload_save_failed",
             extra={"work_id": work_id, "document_id": doc.id},
         )
         doc.status = "failed"
-        http_exc = map_embedding_error(exc)
-        doc.error_message = (
-            str(exc) if settings.DEBUG else http_exc.detail
-        )
+        doc.error_message = "无法保存上传文件"
         await session.commit()
         await session.refresh(doc)
-        raise http_exc from exc
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="无法保存上传文件",
+        ) from exc
 
-    await session.commit()
-    await session.refresh(doc)
+    job = IngestJob(
+        document_id=doc.id,
+        work_id=work_id,
+        user_id=user_id,
+        storage_path=str(path),
+        filename=filename,
+    )
+    try:
+        await enqueue_ingest(redis, job)
+    except Exception as exc:
+        logger.exception(
+            "document_upload_enqueue_failed",
+            extra={"work_id": work_id, "document_id": doc.id},
+        )
+        storage.delete_upload_file(path)
+        doc.status = "failed"
+        doc.error_message = "无法加入入库队列"
+        await session.commit()
+        await session.refresh(doc)
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="无法加入入库队列，请稍后重试",
+        ) from exc
+
+    logger.info(
+        "document_upload_queued",
+        extra={
+            "work_id": work_id,
+            "document_id": doc.id,
+            "size_bytes": doc.size_bytes,
+        },
+    )
     return doc
 
 

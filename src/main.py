@@ -16,6 +16,8 @@ from src.core.middleware import my_middleware
 from src.api.v1.routers import routers
 from src.db.postgres import engine, ensure_pgvector_extension, postgres_connect
 from src.db.redis import redis_connect
+from src.rag import storage as rag_storage
+from src.rag.worker import recover_pending_ingest_jobs, run_ingest_worker
 
 logger = logging.getLogger(__name__)
 
@@ -40,8 +42,23 @@ async def lifespan(app: FastAPI):
     setup_logging(settings)
     await postgres_connect()
     await ensure_pgvector_extension()
+    rag_storage.ensure_upload_dir()
     app.state.redis = await redis_connect()
+    ingest_shutdown = asyncio.Event()
+    ingest_worker_task: asyncio.Task | None = None
+    if app.state.redis is not None:
+        await recover_pending_ingest_jobs(app.state.redis)
+        ingest_worker_task = asyncio.create_task(
+            run_ingest_worker(app, ingest_shutdown)
+        )
     yield
+    ingest_shutdown.set()
+    if ingest_worker_task is not None:
+        ingest_worker_task.cancel()
+        try:
+            await ingest_worker_task
+        except asyncio.CancelledError:
+            pass
     await engine.dispose()
     r = app.state.redis
     if r is not None:

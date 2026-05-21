@@ -1,6 +1,6 @@
 from typing import Annotated
 
-from fastapi import APIRouter, File, UploadFile, status
+from fastapi import APIRouter, File, Request, UploadFile, status
 
 from src.core.security import CurrentUserIdDep
 from src.db.postgres import SessionDep
@@ -75,11 +75,18 @@ async def list_documents(
 )
 async def upload_document(
     work_id: int,
+    request: Request,
     user_id: CurrentUserIdDep,
     session: SessionDep,
     file: Annotated[UploadFile, File()],
 ) -> schemas.DocumentOut:
-    doc = await service.upload_document(session, work_id, user_id, file)
+    doc = await service.upload_document(
+        session,
+        work_id,
+        user_id,
+        file,
+        redis=request.app.state.redis,
+    )
     return schemas.DocumentOut.model_validate(doc)
 
 

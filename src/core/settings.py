@@ -85,8 +85,18 @@ class Settings(BaseSettings):
     RAG_SEARCH_TYPE: Literal["similarity", "mmr"] = "similarity"
     RAG_MMR_FETCH_K: int = 20
     RAG_MMR_LAMBDA_MULT: float = 0.5
-    RAG_MAX_UPLOAD_BYTES: int = 5_242_880
-    # 文档入库（切分 + 批量 embedding 写入）在线程池中的最长等待（秒）
+    RAG_MAX_UPLOAD_BYTES: int = 52_428_800
+    # 上传原文落盘目录（单机异步入库；生产建议挂载 volume）
+    RAG_UPLOAD_DIR: str = "./data/uploads"
+    # Redis 入库任务队列 key
+    RAG_INGEST_QUEUE_KEY: str = "rag:ingest:queue"
+    # 每批 embedding + PGVector 写入的 chunk 数
+    RAG_INGEST_BATCH_SIZE: int = 32
+    # 同时处理的大文件入库任务数（单机建议 1）
+    RAG_INGEST_MAX_PARALLEL: int = 1
+    # 单批入库在线程池中的最长等待（秒）
+    RAG_INGEST_BATCH_TIMEOUT_SECONDS: float = 120.0
+    # 文档入库（切分 + 批量 embedding 写入）在线程池中的最长等待（秒）；仅用于同步兜底/测试
     RAG_INGEST_TIMEOUT_SECONDS: float = 300.0
     # 单次检索（query embedding + 向量搜索）的最长等待（秒）
     RAG_RETRIEVE_TIMEOUT_SECONDS: float = 60.0

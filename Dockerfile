@@ -33,7 +33,12 @@ COPY --from=builder /app/.venv /app/.venv
 COPY --from=builder /app/src /app/src
 
 RUN useradd --create-home --shell /bin/bash appuser \
-    && chown -R appuser:appuser /app
+    && mkdir -p /var/lib/wensu/uploads \
+    && chown -R appuser:appuser /app /var/lib/wensu/uploads
+
+ENV RAG_UPLOAD_DIR=/var/lib/wensu/uploads
+
+VOLUME ["/var/lib/wensu/uploads"]
 
 USER appuser
 

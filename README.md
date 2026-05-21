@@ -82,8 +82,26 @@ psql "$ASYNC_DATABASE_URL" -f migrations/002_works_documents.sql
 | `RAG_EMBEDDING_BASE_URL` | 方舟：`https://ark.cn-beijing.volces.com/api/v3`（**不要**加 `/embeddings` 或 `/process`） |
 | `RAG_EMBEDDING_MODEL` | Doubao-embedding-vision 推理接入点，如 `ep-xxx` |
 | `RAG_EMBEDDING_DIMENSIONS` | 常用 `1024`（与接入点一致） |
+| `RAG_MAX_UPLOAD_BYTES` | 单文件上限，默认 `52428800`（50×1024²，约 50MB） |
+| `RAG_UPLOAD_DIR` | 上传原文落盘目录；生产建议挂载 volume（如 `/var/lib/wensu/uploads`） |
+| `RAG_INGEST_BATCH_SIZE` | 后台入库每批 chunk 数（默认 32） |
+| `RAG_INGEST_MAX_PARALLEL` | 同时处理的大文件入库任务数（单机建议 1） |
 
 若曾用其他 Embedding 模型入库，更换模型后需**清空向量并重新上传文档**（维度可能不同）。
+
+### 大文件异步入库
+
+上传 `.txt` / `.md`（最大约 50MB）时，API **立即返回** `status: "pending"`，切分与向量化在后台 Redis 队列中执行；**不要**在上传请求中等待入库完成。
+
+1. `POST /api/works/{work_id}/documents`（multipart `file`）→ 响应 `pending`。
+2. 每 2–5 秒 `GET /api/works/{work_id}/documents` 轮询，直至 `done` 或 `failed`（`failed` 时查看 `error_message`）。
+3. `done` 且 `chunk_count > 0` 后再发起带 `work_id` 的对话。
+
+**依赖**：Redis 必须可用（`REDIS_OPTIONAL` 勿在生产设为 `true`，否则无法入队）。进程重启后会将仍为 `pending` 且落盘文件存在的文档重新入队。
+
+**切分**：优先按「第X章」标题分章再分块；可调大 `RAG_CHUNK_SIZE`（如 1500–2000）以降低 embedding 次数，变更后需重新上传文档。
+
+**反向代理**（Nginx 示例）：`client_max_body_size 52m;`，上传超时 ≥ 120s（仅传文件，不等待入库）。
 
 ### HTTP API（均需 `Authorization: Bearer <JWT>`）
 
@@ -93,14 +111,14 @@ psql "$ASYNC_DATABASE_URL" -f migrations/002_works_documents.sql
 | GET | `/api/works` | 作品列表 |
 | GET/PATCH/DELETE | `/api/works/{work_id}` | 详情 / 重命名 / 级联删除向量 |
 | GET | `/api/works/{work_id}/documents` | 文档列表 |
-| POST | `/api/works/{work_id}/documents` | 上传 `.txt` / `.md`（multipart `file`） |
+| POST | `/api/works/{work_id}/documents` | 上传 `.txt` / `.md`（最大约 50MB）；立即返回 `pending`，后台入库 |
 | DELETE | `/api/works/{work_id}/documents/{document_id}` | 删除文档及向量 |
 | POST | `/api/agent/chat/stream` | SSE；JSON 含 `message` 与 **`work_id`** |
 
 ### 手工验收
 
 1. 执行上述 SQL 迁移后启动应用。
-2. 登录获取 JWT → `POST /api/works` 创建作品 → 上传 sample.md。
+2. 登录获取 JWT → `POST /api/works` 创建作品 → 上传 sample.md，轮询文档直至 `status` 为 `done`。
 3. `POST /api/agent/chat/stream`，body：`{"message":"…","work_id":1}`，确认响应基于文档内容。
 4. `DELETE /api/works/{id}` 后，同 `work_id` 对话应无检索片段。
 
