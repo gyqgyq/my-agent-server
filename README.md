@@ -24,6 +24,8 @@ uv run uvicorn src.main:app --reload
 |------|------|
 | `LOG_LEVEL` | 如 `INFO`、`WARNING`、`DEBUG`；生产建议 `INFO` 或更严。 |
 | `LOG_FORMAT` | `text`（本地可读）或 `json`（单行 JSON，便于 Loki / ELK 等采集）。生产建议在 `/opt/my-agent-server/.env` 中设为 `json`。 |
+| `LOG_FILE` | 可选。设置后除 stderr 外再写入该路径（`RotatingFileHandler` 轮转）。容器内路径需挂载 volume，否则重启丢失。不设则仅 stderr（推荐纯 Docker 部署）。 |
+| `LOG_MAX_BYTES` / `LOG_BACKUP_COUNT` | 仅 `LOG_FILE` 生效时控制单文件大小与保留份数，默认 10 MiB × 5。 |
 | `DEBUG` | `false` 时关闭 `/docs`、`/redoc`、`/openapi.json`，且不挂载调试用 `/api/test/*` 路由。生产务必为 `false`。 |
 | `SERVER_STATUS_TOKEN` | 设置后，`GET /server-status?token=…` 校验通过才返回探活 JSON；未设置或空则始终 404。 |
 | `CORS_ORIGINS` | 逗号分隔的浏览器 `Origin`；留空则不注册 CORS 中间件（由网关或同源处理）。 |
@@ -185,11 +187,50 @@ docker run -d \
 | `LOG_FORMAT` | 建议 `json`，便于日志采集 |
 | `TRUST_PROXY_HEADERS` | 仅当应用位于**受信**反向代理之后且网关会正确改写 `X-Forwarded-For` 时设为 `true` |
 
+### 日志落盘与轮转（生产）
+
+应用遵循 **12-Factor**：默认只向 **stderr** 输出（`LOG_FORMAT=json` 时单行 JSON），由运行时采集，**不在容器可写层随意写死路径**。
+
+**推荐（纯 Docker）**：不设 `LOG_FILE`，启动时限制 Docker 引擎侧 json-file 日志体积，避免占满磁盘：
+
+```bash
+docker run -d \
+  --name my-agent-serve \
+  --log-driver json-file \
+  --log-opt max-size=10m \
+  --log-opt max-file=5 \
+  --env-file /opt/my-agent-server/.env \
+  -p 8000:8000 \
+  --restart unless-stopped \
+  fastapi-first:latest
+```
+
+宿主机上 Docker 实际文件一般在 `/var/lib/docker/containers/<容器ID>/<容器ID>-json.log`（勿手改，用 `docker logs` 查看）。
+
+**可选（宿主机目录 + 应用轮转）**：需要直接在服务器上 `tail`/`grep` 时，挂载目录并设置 `LOG_FILE`（与 stderr 双写，便于备份与采集并存）：
+
+```bash
+sudo mkdir -p /var/log/my-agent-server
+docker run -d \
+  --name my-agent-serve \
+  --env-file /opt/my-agent-server/.env \
+  -e LOG_FORMAT=json \
+  -e LOG_FILE=/var/log/my-agent-server/app.log \
+  -v /var/log/my-agent-server:/var/log/my-agent-server \
+  -p 8000:8000 \
+  --restart unless-stopped \
+  fastapi-first:latest
+```
+
+生产 `.env` 建议至少：`DEBUG=false`、`LOG_FORMAT=json`、`LOG_LEVEL=INFO`。
+
 查看日志与健康状态：
 
 ```bash
-docker logs -f fastapi-first
-docker inspect --format='{{json .State.Health}}' fastapi-first
+docker logs -f my-agent-serve
+docker inspect --format='{{json .State.Health}}' my-agent-serve
+# 若配置了 LOG_FILE 挂载：
+tail -f /var/log/my-agent-server/app.log
 ```
 
 若配置了 `SERVER_STATUS_TOKEN`，可在网关后探活：
@@ -205,9 +246,9 @@ GET /server-status?token=<SERVER_STATUS_TOKEN>
 ### 更新发布
 
 ```bash
-docker build -t fastapi-first:latest .
-docker stop fastapi-first && docker rm fastapi-first
-docker run -d --name fastapi-first --env-file /opt/my-agent-server/.env -p 8000:8000 --restart unless-stopped fastapi-first:latest
+docker build -t my-agent-serve:latest .
+docker stop my-agent-serve && docker rm my-agent-serve
+docker run -d --name my-agent-serve --env-file /opt/my-agent-server/.env -p 8000:8000 --restart unless-stopped my-agent-serve:latest
 ```
 
 或使用新标签滚动替换，避免覆盖正在运行的 `latest` 层。

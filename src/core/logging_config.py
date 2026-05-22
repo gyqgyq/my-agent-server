@@ -3,8 +3,10 @@ from __future__ import annotations
 import json
 import logging
 import logging.config
+import logging.handlers
 import sys
 from datetime import datetime, timezone
+from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
 if TYPE_CHECKING:
@@ -89,14 +91,45 @@ class TextFormatter(logging.Formatter):
         return f"{base} | {tail}"
 
 
+def _ensure_log_file_parent(log_file: str) -> None:
+    Path(log_file).expanduser().resolve().parent.mkdir(parents=True, exist_ok=True)
+
+
 def setup_logging(settings: Settings) -> None:
     """
     使用 dictConfig 统一根 logger 与 uvicorn 相关 logger。
     disable_existing_loggers=False，避免覆盖 Uvicorn 已创建的 logger。
+
+    生产最佳实践（12-Factor / 容器）：
+    - 始终输出到 stderr，由 Docker（json-file 驱动 + max-size）或 journald 采集；
+    - LOG_FORMAT=json 便于 Loki / ELK；
+    - 可选 LOG_FILE：裸机或 docker -v 挂载宿主机目录时做本地轮转落盘。
     生产若同时使用 Uvicorn access 与 app.access，可能重复；可将 Uvicorn 启动为 --no-access-log。
     """
     fmt_key = "json" if settings.LOG_FORMAT == "json" else "text"
     level = settings.LOG_LEVEL.upper()
+
+    handlers: dict[str, Any] = {
+        "stderr": {
+            "class": "logging.StreamHandler",
+            "formatter": fmt_key,
+            "stream": sys.stderr,
+        },
+    }
+    root_handlers: list[str] = ["stderr"]
+
+    log_file = (settings.LOG_FILE or "").strip()
+    if log_file:
+        _ensure_log_file_parent(log_file)
+        handlers["file"] = {
+            "class": "logging.handlers.RotatingFileHandler",
+            "formatter": fmt_key,
+            "filename": log_file,
+            "maxBytes": settings.LOG_MAX_BYTES,
+            "backupCount": settings.LOG_BACKUP_COUNT,
+            "encoding": "utf-8",
+        }
+        root_handlers.append("file")
 
     config: dict[str, Any] = {
         "version": 1,
@@ -105,16 +138,10 @@ def setup_logging(settings: Settings) -> None:
             "json": {"()": JsonFormatter},
             "text": {"()": TextFormatter},
         },
-        "handlers": {
-            "default": {
-                "class": "logging.StreamHandler",
-                "formatter": fmt_key,
-                "stream": sys.stderr,
-            },
-        },
+        "handlers": handlers,
         "root": {
             "level": level,
-            "handlers": ["default"],
+            "handlers": root_handlers,
         },
         "loggers": {
             "uvicorn": {"level": "INFO", "handlers": [], "propagate": True},
@@ -127,3 +154,12 @@ def setup_logging(settings: Settings) -> None:
         },
     }
     logging.config.dictConfig(config)
+    logging.getLogger(__name__).info(
+        "logging_configured",
+        extra={
+            "level": level,
+            "format": fmt_key,
+            "handlers": root_handlers,
+            "log_file": log_file or None,
+        },
+    )

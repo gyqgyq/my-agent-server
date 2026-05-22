@@ -52,9 +52,13 @@ class Settings(BaseSettings):
     # True：Ping 失败时不阻断启动，app.state.redis 为 None（仅适合本地/非 Redis 关键路径）
     REDIS_OPTIONAL: bool = False
 
-    # 日志（LOG_FORMAT=json 适合生产采集；本地默认 text）
+    # 日志（生产建议 LOG_FORMAT=json；容器内默认只写 stderr，由 Docker 采集）
     LOG_LEVEL: str = "INFO"
     LOG_FORMAT: Literal["json", "text"] = "text"
+    # 可选：落盘路径（裸机/systemd 或 docker -v 挂载宿主机目录后设置）
+    LOG_FILE: str | None = None
+    LOG_MAX_BYTES: int = 10_485_760  # 10 MiB
+    LOG_BACKUP_COUNT: int = 5
 
     # llm配置
     AGENT_CHAT_API_KEY: str
